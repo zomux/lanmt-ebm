@@ -14,6 +14,7 @@ sys.path.append(".")
 
 from lanmt.lib_lanmt_modules import TransformerEncoder
 from lanmt.lib_lanmt_model import LANMTModel
+from lanmt.lib_simple_encoders import ConvolutionalEncoder
 from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
 
@@ -35,7 +36,8 @@ class LatentScoreNetwork3(Transformer):
         self.enable_valid_grad = True
 
     def prepare(self):
-        self._encoder = TransformerEncoder(None, self._hidden_size, 3)
+        # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
+        self._encoder = ConvolutionalEncoder(None, self._hidden_size, 3)
         self._latent2hidden = nn.Linear(self._latent_size, self._hidden_size)
         self._hidden2energy = nn.Sequential(
             nn.Linear(self._hidden_size, self.hidden_size // 2),
@@ -52,7 +54,6 @@ class LatentScoreNetwork3(Transformer):
         energy = self._hidden2energy(h)
         mean_energy = ((energy.squeeze(2) * mask).sum(1) / mask.sum(1)).mean()
         grad = torch.autograd.grad(mean_energy, latent, create_graph=True)[0]
-        import pdb;pdb.set_trace()
         return energy, grad
 
     def compute_delta_inference(self, x, x_mask, latent, prior_states=None):

@@ -5,6 +5,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
 import torch
 import torch.nn as nn
 
@@ -104,16 +105,15 @@ class ConvolutionalEncoder(nn.Module):
 
     def __init__(self, embed_layer, size, n_layers=3, dropout_ratio=0.1, skip_connect=False):
         super(ConvolutionalEncoder, self).__init__()
-        if ff_size is None:
-            ff_size = size * 4
         self.embed_layer = embed_layer
         self.encoder_layers = nn.ModuleList()
+        self.norm_layers = nn.ModuleList()
         self.skip_connect = skip_connect
         self._rescale = 1. / math.sqrt(2)
         for _ in range(n_layers):
+            self.norm_layers.append(nn.LayerNorm(size))
             layer = nn.Sequential(
-                nn.LayerNorm(size),
-                nn.Linear(size, size),
+                nn.Conv1d(size, size, 3, padding=1),
                 nn.ReLU(),
                 nn.Dropout(p=dropout_ratio))
             self.encoder_layers.append(layer)
@@ -124,7 +124,10 @@ class ConvolutionalEncoder(nn.Module):
         first_x = x
         for l, layer in enumerate(self.encoder_layers):
             prev_x = x
-            x = layer(x)
+            x = self.norm_layers[l](x)
+            x = layer(x.transpose(1, 2)).transpose(1, 2)
+            if mask is not None:
+                x = x * mask[:, :, None]
             x = prev_x + x
             if self.skip_connect:
                 x = self._rescale * (first_x + x)
