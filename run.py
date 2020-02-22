@@ -293,6 +293,7 @@ if OPTS.test or OPTS.all:
     if OPTS.scorenet:
         scorenet = nmt
         OPTS.scorenet = scorenet
+        scorenet.train(False)
         nmt = scorenet.nmt()
         nmt.train(False)
     src_vocab = Vocab(src_vocab_path)

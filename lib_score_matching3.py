@@ -92,9 +92,9 @@ class LatentScoreNetwork3(Transformer):
         score_map = self.compute_loss(x, x_mask)
         return score_map
 
-    def refine(self, z, x_states, mask=None, n_steps=50, step_size=0.01):
+    def refine(self, z, x, mask=None, n_steps=50, step_size=0.01):
         for _ in range(n_steps):
-            energy, grad = self.compute_energy(z, x_states, mask)
+            energy, grad = self.compute_energy(z, x, mask)
             if not OPTS.evaluate:
                 print(energy.mean().detach().cpu().numpy(), grad.norm(2).detach().cpu().numpy())
             z = z - step_size * grad
