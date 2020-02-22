@@ -98,7 +98,9 @@ class LatentScoreNetwork3(Transformer):
         for _ in range(n_steps):
             energy, grad = self.compute_energy(z, x, mask)
             if not OPTS.evaluate:
-                print(energy.mean().detach().cpu().numpy(), grad.norm(2).detach().cpu().numpy())
+                print((z - refined_z).norm(2).detach().cpu().numpy(),
+                      energy.mean().detach().cpu().numpy(),
+                      grad.norm(2).detach().cpu().numpy())
             z = z - step_size * grad
             # noise = torch.randn_like(z) * np.sqrt(step_size * 2)
             # z = z + step_size * grad + noise
