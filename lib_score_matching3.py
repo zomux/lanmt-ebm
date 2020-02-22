@@ -95,8 +95,9 @@ class LatentScoreNetwork3(Transformer):
     def refine(self, z, x, mask=None, n_steps=50, step_size=0.001):
         if mask is not None:
             mask = mask.float()
-        with torch.no_grad():
-            refined_z = self.compute_delta_inference(x, mask, z).detach()
+        if not OPTS.evaluate:
+            with torch.no_grad():
+                refined_z = self.compute_delta_inference(x, mask, z).detach()
         for _ in range(n_steps):
             energy, grad = self.compute_energy(z, x, mask)
             if not OPTS.evaluate:
