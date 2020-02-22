@@ -103,7 +103,7 @@ class LatentScoreNetwork3(Transformer):
                 print((z - refined_z).norm(2).detach().cpu().numpy(),
                       energy.mean().detach().cpu().numpy(),
                       grad.norm(2).detach().cpu().numpy())
-            z = z - step_size * grad + torch.randn_like(z) * 0.0001
+            z = z - step_size * grad
             # noise = torch.randn_like(z) * np.sqrt(step_size * 2)
             # z = z + step_size * grad + noise
             # norm = grad.norm(dim=2)
