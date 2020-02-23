@@ -284,6 +284,7 @@ class LANMTModel(Transformer):
         decoder_outputs = TensorMap({"final_states": z_with_y_length})
         if torch.is_grad_enabled():
             import pdb;pdb.set_trace()
+            self.compute_loss
         denom = x.shape[0]
         if self._shard_size is not None and self._shard_size > 0:
             loss_scores, decoder_tensors, decoder_grads = self.compute_shard_loss(
