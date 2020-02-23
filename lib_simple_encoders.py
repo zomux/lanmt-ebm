@@ -15,8 +15,6 @@ class DisentangledEncoder(nn.Module):
 
     def __init__(self, embed_layer, size, n_layers=3, dropout_ratio=0.1, skip_connect=False):
         super(DisentangledEncoder, self).__init__()
-        if ff_size is None:
-            ff_size = size * 4
         self.embed_layer = embed_layer
         self.encoder_layers = nn.ModuleList()
         self.skip_connect = skip_connect
