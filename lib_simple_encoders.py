@@ -44,7 +44,7 @@ class DisentangledEncoder(nn.Module):
 class DisentangledCrossEncoder(nn.Module):
 
     def __init__(self, embed_layer, size, n_layers, ff_size=None, n_att_head=8, dropout_ratio=0.1, skip_connect=False):
-        super(TransformerCrossEncoder, self).__init__()
+        super(DisentangledCrossEncoder, self).__init__()
         if ff_size is None:
             ff_size = size * 4
         self._skip = skip_connect
@@ -53,7 +53,7 @@ class DisentangledCrossEncoder(nn.Module):
         self.layer_norm = nn.LayerNorm(size)
         self.encoder_layers = nn.ModuleList()
         for _ in range(n_layers):
-            layer = TransformerCrossEncoderLayer(size, ff_size, n_att_head=n_att_head,
+            layer = DisentangledCrossEncoderLayer(size, ff_size, n_att_head=n_att_head,
                                             dropout_ratio=dropout_ratio)
             self.encoder_layers.append(layer)
 
@@ -71,7 +71,7 @@ class DisentangledCrossEncoder(nn.Module):
 
 class DisentangledCrossEncoderLayer(nn.Module):
 
-    def __init__(self, size, ff_size=None, n_att_head=8, dropout_ratio=0.1, relative_pos=False):
+    def __init__(self, size, dropout_ratio=0.1, relative_pos=False):
         super(TransformerCrossEncoderLayer, self).__init__()
         if ff_size is None:
             ff_size = size * 4
