@@ -71,7 +71,7 @@ class DisentangledCrossEncoder(nn.Module):
 class DisentangledCrossEncoderLayer(nn.Module):
 
     def __init__(self, size, dropout_ratio=0.1, relative_pos=False):
-        super(TransformerCrossEncoderLayer, self).__init__()
+        super(DisentangledCrossEncoder, self).__init__()
         self.dropout = nn.Dropout(dropout_ratio)
         self.cross_attention = MultiHeadAttention(size, n_att_head, dropout_ratio=dropout_ratio, relative_pos=relative_pos)
         self.ff_layer = nn.Sequential(nn.Linear(size, size), nn.ReLU())
