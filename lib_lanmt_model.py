@@ -300,6 +300,7 @@ class LANMTModel(Transformer):
             score_map["BLEU"] = - self.get_BLEU(predictions, y)
 
         # --------------------------  Bacprop gradient --------------------#
+        import pdb;pdb.set_trace()
         if self._shard_size is not None and self._shard_size > 0 and decoder_tensors is not None:
             decoder_tensors.append(remain_loss)
             decoder_grads.append(None)
