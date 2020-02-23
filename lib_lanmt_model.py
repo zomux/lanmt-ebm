@@ -49,7 +49,7 @@ class LANMTModel(Transformer):
         """
         self.prior_layers = prior_layers
         self.decoder_layers = decoder_layers
-        self.q_layers = q_layers
+        self.q_layers = prior_layers
         self.latent_dim = latent_dim
         self.KL_budget = KL_budget
         self.KL_weight = KL_weight
