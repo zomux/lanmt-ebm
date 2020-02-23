@@ -53,8 +53,7 @@ class DisentangledCrossEncoder(nn.Module):
         self.layer_norm = nn.LayerNorm(size)
         self.encoder_layers = nn.ModuleList()
         for _ in range(n_layers):
-            layer = DisentangledCrossEncoderLayer(size, ff_size, n_att_head=n_att_head,
-                                            dropout_ratio=dropout_ratio)
+            layer = DisentangledCrossEncoderLayer(size, dropout_ratio=dropout_ratio)
             self.encoder_layers.append(layer)
 
     def forward(self, x, x_mask, y, y_mask):

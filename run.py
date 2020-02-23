@@ -93,6 +93,7 @@ ap.add_argument("--opt_sigmoidvar", action="store_true")
 ap.add_argument("--opt_pvarbound", type=float, default=0.)
 ap.add_argument("--opt_interpretability", action="store_true")
 ap.add_argument("--opt_zeroprior", action="store_true")
+ap.add_argument("--opt_distentangle", action="store_true")
 
 # Paths
 ap.add_argument("--model_path",
