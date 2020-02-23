@@ -8,6 +8,7 @@ from __future__ import print_function
 import math
 import torch
 import torch.nn as nn
+from nmtlab.modules.transformer_modules import MultiHeadAttention
 
 
 class DisentangledEncoder(nn.Module):
@@ -70,7 +71,7 @@ class DisentangledCrossEncoder(nn.Module):
 
 class DisentangledCrossEncoderLayer(nn.Module):
 
-    def __init__(self, size, dropout_ratio=0.1, relative_pos=False):
+    def __init__(self, size, n_att_head=8, dropout_ratio=0.1, relative_pos=False):
         super(DisentangledCrossEncoder, self).__init__()
         self.dropout = nn.Dropout(dropout_ratio)
         self.cross_attention = MultiHeadAttention(size, n_att_head, dropout_ratio=dropout_ratio, relative_pos=relative_pos)
