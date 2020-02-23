@@ -77,7 +77,7 @@ class LANMTModel(Transformer):
         if OPTS.disentangle:
             from lib_simple_encoders import DisentangledCrossEncoder, DisentangledEncoder
             self.prior_encoder = DisentangledEncoder(self.x_embed_layer, self.hidden_size, self.prior_layers)
-            self.q_encoder_xy = DisentangledEncoder(self.y_embed_layer, self.hidden_size, self.q_layers)
+            self.q_encoder_y = DisentangledEncoder(self.y_embed_layer, self.hidden_size, self.q_layers)
             self.q_encoder_xy = DisentangledCrossEncoder(None, self.hidden_size, self.q_layers)
         else:
             self.prior_encoder = TransformerEncoder(self.x_embed_layer, self.hidden_size, self.prior_layers)
