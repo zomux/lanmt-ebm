@@ -73,6 +73,8 @@ class LANMTModel(Transformer):
         self.length_embed_layer = nn.Embedding(500, self.hidden_size)
         # Prior p(z|x)
         self.prior_prob_estimator = nn.Linear(self.hidden_size, self.latent_dim * 2)
+        if OPTS.disentangle:
+            from lib_simple_encoders import DisentangledCrossEncoder, DisentangledEncoder
         self.prior_encoder = TransformerEncoder(self.x_embed_layer, self.hidden_size, self.prior_layers)
         # Approximator q(z|x,y)
         self.q_encoder_y = TransformerEncoder(self.y_embed_layer, self.hidden_size, self.q_layers)
