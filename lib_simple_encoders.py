@@ -9,6 +9,7 @@ import math
 import torch
 import torch.nn as nn
 from nmtlab.modules.transformer_modules import MultiHeadAttention
+from nmtlab.modules.transformer_modules import residual_connect
 
 
 class DisentangledEncoder(nn.Module):
