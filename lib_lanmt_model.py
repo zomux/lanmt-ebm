@@ -72,8 +72,8 @@ class LANMTModel(Transformer):
         self.length_converter = LengthConverter()
         self.length_embed_layer = nn.Embedding(500, self.hidden_size)
         # Prior p(z|x)
-        self.prior_encoder = TransformerEncoder(self.x_embed_layer, self.hidden_size, self.prior_layers)
         self.prior_prob_estimator = nn.Linear(self.hidden_size, self.latent_dim * 2)
+        self.prior_encoder = TransformerEncoder(self.x_embed_layer, self.hidden_size, self.prior_layers)
         # Approximator q(z|x,y)
         self.q_encoder_y = TransformerEncoder(self.y_embed_layer, self.hidden_size, self.q_layers)
         self.q_encoder_xy = TransformerCrossEncoder(None, self.hidden_size, self.q_layers)
@@ -316,9 +316,9 @@ class LANMTModel(Transformer):
             else:
                 prior_prob = self.prior_prob_estimator(prior_states)
             if not OPTS.Tlatent_search:
-                if OPTS.scorenet:
+                if OPTS.denoise:
                     z = prior_prob[:, :, :self.latent_dim]
-                    prior_prob = OPTS.scorenet.refine(z, self.x_embed_layer(x), x_mask)
+                    prior_prob = OPTS.denoise.refine(z, self.x_embed_layer(x), x_mask)
                 latent = self.deterministic_sample_from_prob(prior_prob)
             else:
                 latent = self.bottleneck.sample_any_dist(prior_prob, samples=OPTS.Tcandidate_num, noise_level=0.5)
