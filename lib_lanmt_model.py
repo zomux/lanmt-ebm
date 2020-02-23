@@ -282,8 +282,6 @@ class LANMTModel(Transformer):
 
         # --------------------------  Compute losses ------------------------#
         decoder_outputs = TensorMap({"final_states": z_with_y_length})
-        if torch.is_grad_enabled():
-            import pdb;pdb.set_trace()
         denom = x.shape[0]
         if self._shard_size is not None and self._shard_size > 0:
             loss_scores, decoder_tensors, decoder_grads = self.compute_shard_loss(
@@ -294,6 +292,8 @@ class LANMTModel(Transformer):
         else:
             raise SystemError("Shard size must be setted or the memory is not enough for this model.")
 
+        if torch.is_grad_enabled():
+            import pdb;pdb.set_trace()
         score_map, remain_loss = self.compute_final_loss(q_prob, prior_prob, z_mask, score_map)
         # Report smoothed BLEU during validation
         if not torch.is_grad_enabled() and self.training_criteria == "BLEU":
