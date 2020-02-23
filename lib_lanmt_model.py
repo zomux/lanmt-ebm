@@ -300,8 +300,9 @@ class LANMTModel(Transformer):
             score_map["BLEU"] = - self.get_BLEU(predictions, y)
 
         # --------------------------  Bacprop gradient --------------------#
-        import pdb;pdb.set_trace()
         if self._shard_size is not None and self._shard_size > 0 and decoder_tensors is not None:
+            import pdb;
+            pdb.set_trace()
             decoder_tensors.append(remain_loss)
             decoder_grads.append(None)
             torch.autograd.backward(decoder_tensors, decoder_grads)
@@ -353,27 +354,4 @@ class LANMTModel(Transformer):
             else:
                 # Just return all candidates
                 pred = logits.argmax(-1)
-                pred = pred * y_mask.long()
-        else:
-            pred = logits.argmax(-1)
-
-        return pred, latent, prior_states
-
-    def standard_gaussian_dist(self, batch_size, seq_size):
-        shape = (batch_size, seq_size, self.latent_dim)
-        return torch.cat([torch.zeros(shape).cuda(), torch.ones(shape).cuda() * 0.55], 2)
-
-    def get_BLEU(self, batch_y_hat, batch_y):
-        """Get the average smoothed BLEU of the predictions."""
-        hyps = batch_y_hat.tolist()
-        refs = batch_y.tolist()
-        bleus = []
-        for hyp, ref in zip(hyps, refs):
-            if 2 in hyp:
-                hyp = hyp[:hyp.index(2)]
-            if 2 in ref:
-                ref = ref[:ref.index(2)]
-            hyp = hyp[1:]
-            ref = ref[1:]
-            bleus.append(smoothed_bleu(hyp, ref))
-        return torch.tensor(np.mean(bleus) * 100.)
+                pred = pred * y_mask.l
