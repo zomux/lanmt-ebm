@@ -40,6 +40,7 @@ class DisentangledEncoder(nn.Module):
                 x = self._rescale * (first_x + x)
         return x
 
+
 class DisentangledCrossEncoder(nn.Module):
 
     def __init__(self, embed_layer, size, n_layers, ff_size=None, n_att_head=8, dropout_ratio=0.1, skip_connect=False):
