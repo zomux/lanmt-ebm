@@ -281,7 +281,7 @@ class LANMTModel(Transformer):
         decoder_states = self.decoder(z_with_y_length, y_mask, prior_states, x_mask)
 
         # --------------------------  Compute losses ------------------------#
-        decoder_outputs = TensorMap({"final_states": decoder_states})
+        decoder_outputs = TensorMap({"final_states": z_with_y_length})
         denom = x.shape[0]
         if self._shard_size is not None and self._shard_size > 0:
             loss_scores, decoder_tensors, decoder_grads = self.compute_shard_loss(
@@ -301,8 +301,6 @@ class LANMTModel(Transformer):
 
         # --------------------------  Bacprop gradient --------------------#
         if self._shard_size is not None and self._shard_size > 0 and decoder_tensors is not None:
-            import pdb;
-            pdb.set_trace()
             decoder_tensors.append(remain_loss)
             decoder_grads.append(None)
             torch.autograd.backward(decoder_tensors, decoder_grads)
