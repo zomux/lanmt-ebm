@@ -44,10 +44,8 @@ class DisentangledEncoder(nn.Module):
 
 class DisentangledCrossEncoder(nn.Module):
 
-    def __init__(self, embed_layer, size, n_layers, ff_size=None, n_att_head=8, dropout_ratio=0.1, skip_connect=False):
+    def __init__(self, embed_layer, size, n_layers, n_att_head=8, dropout_ratio=0.1, skip_connect=False):
         super(DisentangledCrossEncoder, self).__init__()
-        if ff_size is None:
-            ff_size = size * 4
         self._skip = skip_connect
         self._reslace = 1. / math.sqrt(2)
         self.embed_layer = embed_layer
