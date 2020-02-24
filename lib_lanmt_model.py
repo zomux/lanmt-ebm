@@ -292,8 +292,6 @@ class LANMTModel(Transformer):
         else:
             raise SystemError("Shard size must be setted or the memory is not enough for this model.")
 
-        if torch.is_grad_enabled():
-            import pdb;pdb.set_trace()
         score_map, remain_loss = self.compute_final_loss(q_prob, prior_prob, z_mask, score_map)
         # Report smoothed BLEU during validation
         if not torch.is_grad_enabled() and self.training_criteria == "BLEU":
@@ -303,6 +301,9 @@ class LANMTModel(Transformer):
 
         # --------------------------  Bacprop gradient --------------------#
         if self._shard_size is not None and self._shard_size > 0 and decoder_tensors is not None:
+            if torch.is_grad_enabled():
+                import pdb;
+                pdb.set_trace()
             decoder_tensors.append(remain_loss)
             decoder_grads.append(None)
             torch.autograd.backward(decoder_tensors, decoder_grads)
