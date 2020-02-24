@@ -282,7 +282,7 @@ class LANMTModel(Transformer):
         decoder_states = self.decoder(z_with_y_length, y_mask, prior_states, x_mask)
 
         # --------------------------  Compute losses ------------------------#
-        decoder_outputs = TensorMap({"final_states": z_with_y_length})
+        decoder_outputs = TensorMap({"final_states": decoder_states})
         denom = x.shape[0]
         if self._shard_size is not None and self._shard_size > 0:
             loss_scores, decoder_tensors, decoder_grads = self.compute_shard_loss(
