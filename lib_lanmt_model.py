@@ -302,9 +302,6 @@ class LANMTModel(Transformer):
 
         # --------------------------  Bacprop gradient --------------------#
         if self._shard_size is not None and self._shard_size > 0 and decoder_tensors is not None:
-            if torch.is_grad_enabled():
-                import pdb;
-                pdb.set_trace()
             decoder_tensors.append(remain_loss)
             decoder_grads.append(None)
             torch.autograd.backward(decoder_tensors, decoder_grads)
