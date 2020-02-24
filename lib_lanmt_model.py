@@ -245,7 +245,7 @@ class LANMTModel(Transformer):
         # So only need to compute the remaining losses and then backprop them
         remain_loss = score_map["kl"].clone() * self.KL_weight
         if "len_loss" in score_map:
-            remain_loss += score_map["len_loss"]
+            remain_loss = remain_loss + score_map["len_loss"]
         # Report the combined loss
         score_map["loss"] = remain_loss + score_map["nll"]
         return score_map, remain_loss
