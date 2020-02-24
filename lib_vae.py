@@ -26,13 +26,15 @@ class VAEBottleneck(nn.Module):
         vec = self.dense(x)
         mu = vec[:, :, :self.z_size]
         if self.standard_var:
-            vec[:, :, self.z_size:] = vec[:, :, self.z_size:] * 0. + 0.55
+            var = vec[:, :, self.z_size:] * 0. + 0.55
+        else:
+            var = vec[:, :, self.z_size:]
         if residual_q is not None:
             mu = 0.5 * (mu + residual_q[:, :, :self.z_size])
         if not sampling:
             return mu, vec
         else:
-            var = F.softplus(vec[:, :, self.z_size:])
+            var = F.softplus(var)
             if residual_q is not None:
                 var = 0.5 * (var + F.softplus(residual_q[:, :, self.z_size:]))
             noise = mu.clone()
