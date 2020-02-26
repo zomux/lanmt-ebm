@@ -57,6 +57,7 @@ class LatentScoreNetwork3(Transformer):
         return energy, grad
 
     def compute_logits(self, latent_vec, prior_states, x_mask, return_logp=False):
+        # lacking length prediction and p(z|x)
         length_delta = lanmt.predict_length(prior_states, latent_vec, x_mask)
         converted_z, y_mask, y_lens = lanmt.convert_length_with_delta(latent_vec, x_mask, length_delta + 1)
         decoder_states = lanmt.decoder(converted_z, y_mask, prior_states, x_mask)
@@ -66,7 +67,10 @@ class LatentScoreNetwork3(Transformer):
             y = logits.argmax(-1)
             nll = F.cross_entropy(logits.view(shape[0] * shape[1], -1), y.view(shape[0] * shape[1]))
             nll = nll.view(shape[0], shape[1])
-            logp = (nll * y_mask).sum()
+            logp = (nll * y_mask).sum(1)
+        else:
+            logp = None
+        return logits, y_mask, logp
 
 
 
