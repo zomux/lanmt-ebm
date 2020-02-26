@@ -74,26 +74,28 @@ class LatentScoreNetwork3(Transformer):
         return logits, y_mask, logp
 
     def compute_delta_inference(self, x, x_mask, latent, prior_states=None):
-        lanmt = self.nmt()
-        if prior_states is None:
-            prior_states = lanmt.prior_encoder(x, x_mask)
-        latent_vec = lanmt.latent2vector_nn(latent)
-        logits, y_mask, _ = self.compute_logits(latent_vec, prior_states, return_logp=False)
-        y = logits.argmax(-1)
-        q_states = lanmt.compute_Q_states(lanmt.x_embed_layer(x), x_mask, y, y_mask)
-        sampled_z, _ = lanmt.bottleneck(q_states, sampling=False)
-        return sampled_z
+        with torch.no_grad():
+            lanmt = self.nmt()
+            if prior_states is None:
+                prior_states = lanmt.prior_encoder(x, x_mask)
+            latent_vec = lanmt.latent2vector_nn(latent)
+            logits, y_mask, _ = self.compute_logits(latent_vec, prior_states, return_logp=False)
+            y = logits.argmax(-1)
+            q_states = lanmt.compute_Q_states(lanmt.x_embed_layer(x), x_mask, y, y_mask)
+            sampled_z, _ = lanmt.bottleneck(q_states, sampling=False)
+            return sampled_z
 
     def compute_loss(self, x, x_mask):
         # Compute cross-entropy loss and it's gradient
         base_latent = x.new_zeros((x.shape[0], x.shape[1], self._latent_size), requires_grad=True, dtype=torch.float)
         base_latent = torch.randn_like(base_latent) + base_latent
         # Compute delta inference
-        with torch.no_grad():
-            refined_z = self.compute_delta_inference(x, x_mask, base_latent).detach()
+        refined_z = self.compute_delta_inference(x, x_mask, base_latent).detach()
         noise = torch.randn_like(refined_z)
         noised_z = refined_z + noise
         noised_z.requires_grad_(True)
+        # Compute logp for both refined z and noised z
+        
         # Compute energy scores
         energy, energy_grad = self.compute_energy(noised_z, x, x_mask)
         # Compute loss
