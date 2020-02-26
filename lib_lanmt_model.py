@@ -186,7 +186,8 @@ class LANMTModel(Transformer):
         y_lens = z_lens + delta
         converted_vectors = self.convert_length(z, z_mask, y_lens)
         # Create target-side mask
-        arange = torch.arange(y_lens.max().long())
+        max_len = max(1, y_lens.max().long())
+        arange = torch.arange(max_len)
         if torch.cuda.is_available():
             arange = arange.cuda()
         y_mask = self.to_float(arange[None, :].repeat(z.size(0), 1) < y_lens[:, None])
