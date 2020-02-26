@@ -33,7 +33,7 @@ class ApproxingEnergyNetwork(Transformer):
         super(ApproxingEnergyNetwork, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         lanmt_model.train(False)
         self._lanmt = [lanmt_model]
-        self.enable_valid_grad = True
+        self.enable_valid_grad = False
 
     def prepare(self):
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
@@ -45,7 +45,7 @@ class ApproxingEnergyNetwork(Transformer):
             nn.Linear(self._hidden_size // 2, 1)
         )
 
-    def compute_energy(self, latent, x, mask):
+    def compute_energy(self, latent, x, mask, return_grad=False):
         if mask is not None:
             mask = mask.float()
         h = self._latent2hidden(latent)
