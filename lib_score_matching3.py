@@ -66,8 +66,11 @@ class LatentScoreNetwork3(Transformer):
         decoder_states = lanmt.decoder(converted_z, y_mask, prior_states, x_mask)
         logits = lanmt.expander_nn(decoder_states)
         y = logits.argmax(-1)
+        import pdb;pdb.set_trace()
         q_states = lanmt.compute_Q_states(lanmt.x_embed_layer(x), x_mask, y, y_mask)
         sampled_z, _ = lanmt.bottleneck(q_states, sampling=False)
+        decoder_states = lanmt.decoder(converted_z, y_mask, prior_states, x_mask)
+        logits = lanmt.expander_nn(decoder_states)
         return sampled_z
 
     def compute_loss(self, x, x_mask):
