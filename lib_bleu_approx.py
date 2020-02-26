@@ -53,8 +53,11 @@ class ApproxingEnergyNetwork(Transformer):
         h = self._encoder(h + x_embeds, mask=mask)
         energy = self._hidden2energy(h)
         mean_energy = ((energy.squeeze(2) * mask).sum(1) / mask.sum(1)).mean()
-        grad = torch.autograd.grad(mean_energy, latent, create_graph=True)[0]
-        return energy, grad
+        if return_grad:
+            grad = torch.autograd.grad(mean_energy, latent, create_graph=True)[0]
+        else:
+            grad = None
+        return mean_energy, grad
 
     def compute_delta_inference(self, x, x_mask, latent, prior_states=None):
         lanmt = self.nmt()
