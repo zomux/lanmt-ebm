@@ -59,6 +59,8 @@ class LatentScoreNetwork3(Transformer):
     def compute_logits(self, latent_vec, prior_states, x_mask, return_logp=False):
         lanmt = self.nmt()
         # lacking length prediction and p(z|x)
+        if latent_vec.shape[-1] < self._hidden_size:
+            latent_vec = lanmt.latent2vector_nn(latent_vec)
         length_delta = lanmt.predict_length(prior_states, latent_vec, x_mask)
         converted_z, y_mask, y_lens = lanmt.convert_length_with_delta(latent_vec, x_mask, length_delta + 1)
         decoder_states = lanmt.decoder(converted_z, y_mask, prior_states, x_mask)
@@ -95,7 +97,7 @@ class LatentScoreNetwork3(Transformer):
         noised_z = refined_z + noise
         noised_z.requires_grad_(True)
         # Compute logp for both refined z and noised z
-        
+        refined_vec =
         # Compute energy scores
         energy, energy_grad = self.compute_energy(noised_z, x, x_mask)
         # Compute loss
