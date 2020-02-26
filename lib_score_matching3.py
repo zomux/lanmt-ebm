@@ -56,6 +56,14 @@ class LatentScoreNetwork3(Transformer):
         grad = torch.autograd.grad(mean_energy, latent, create_graph=True)[0]
         return energy, grad
 
+    def compute_logits(self, latent_vec, prior_states, x_mask):
+        length_delta = lanmt.predict_length(prior_states, latent_vec, x_mask)
+        converted_z, y_mask, y_lens = lanmt.convert_length_with_delta(latent_vec, x_mask, length_delta + 1)
+        decoder_states = lanmt.decoder(converted_z, y_mask, prior_states, x_mask)
+        logits = lanmt.expander_nn(decoder_states)
+        
+
+
     def compute_delta_inference(self, x, x_mask, latent, prior_states=None):
         lanmt = self.nmt()
         if prior_states is None:
@@ -66,11 +74,8 @@ class LatentScoreNetwork3(Transformer):
         decoder_states = lanmt.decoder(converted_z, y_mask, prior_states, x_mask)
         logits = lanmt.expander_nn(decoder_states)
         y = logits.argmax(-1)
-        import pdb;pdb.set_trace()
         q_states = lanmt.compute_Q_states(lanmt.x_embed_layer(x), x_mask, y, y_mask)
         sampled_z, _ = lanmt.bottleneck(q_states, sampling=False)
-        decoder_states = lanmt.decoder(converted_z, y_mask, prior_states, x_mask)
-        logits = lanmt.expander_nn(decoder_states)
         return sampled_z
 
     def compute_loss(self, x, x_mask):
