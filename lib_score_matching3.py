@@ -81,7 +81,7 @@ class LatentScoreNetwork3(Transformer):
             if prior_states is None:
                 prior_states = lanmt.prior_encoder(x, x_mask)
             latent_vec = lanmt.latent2vector_nn(latent)
-            logits, y_mask, _ = self.compute_logits(latent_vec, prior_states, return_logp=False)
+            logits, y_mask, _ = self.compute_logits(latent_vec, prior_states, x_mask, return_logp=False)
             y = logits.argmax(-1)
             q_states = lanmt.compute_Q_states(lanmt.x_embed_layer(x), x_mask, y, y_mask)
             sampled_z, _ = lanmt.bottleneck(q_states, sampling=False)
