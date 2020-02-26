@@ -62,6 +62,9 @@ class LatentScoreNetwork3(Transformer):
         decoder_states = lanmt.decoder(converted_z, y_mask, prior_states, x_mask)
         logits = lanmt.expander_nn(decoder_states)
         if return_logp:
+            shape = logits.shape
+            y = logits.argmax(-1)
+            nll = F.cross_entropy(logits.view(shape[0], shape[1], -1), y.view(shape[0], shape[1]))
             
 
 
