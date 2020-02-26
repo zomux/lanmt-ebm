@@ -129,6 +129,7 @@ class LengthConverter(nn.Module):
             z_mask - latent mask, shape: B x L_x
         """
         n = z_mask.sum(1)
+        import pdb;pdb.set_trace()
         arange_l = torch.arange(ls.max().long())
         arange_z = torch.arange(z.size(1))
         if torch.cuda.is_available():
