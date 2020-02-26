@@ -66,6 +66,7 @@ class LatentScoreNetwork3(Transformer):
             y = logits.argmax(-1)
             nll = F.cross_entropy(logits.view(shape[0] * shape[1], -1), y.view(shape[0] * shape[1]))
             nll = nll.view(shape[0], shape[1])
+            logp = (nll * y_mask).sum()
 
 
 
