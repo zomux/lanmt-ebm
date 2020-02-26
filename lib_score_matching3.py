@@ -85,19 +85,19 @@ class LatentScoreNetwork3(Transformer):
             y = logits.argmax(-1)
             q_states = lanmt.compute_Q_states(lanmt.x_embed_layer(x), x_mask, y, y_mask)
             sampled_z, _ = lanmt.bottleneck(q_states, sampling=False)
-            return sampled_z
+            return sampled_z, prior_states
 
     def compute_loss(self, x, x_mask):
         # Compute cross-entropy loss and it's gradient
         base_latent = x.new_zeros((x.shape[0], x.shape[1], self._latent_size), requires_grad=True, dtype=torch.float)
         base_latent = torch.randn_like(base_latent) + base_latent
         # Compute delta inference
-        refined_z = self.compute_delta_inference(x, x_mask, base_latent).detach()
+        refined_z, prior_states = self.compute_delta_inference(x, x_mask, base_latent).detach()
         noise = torch.randn_like(refined_z)
         noised_z = refined_z + noise
         noised_z.requires_grad_(True)
         # Compute logp for both refined z and noised z
-        refined_vec =
+        _, _, refined_logp = self.compute_logits(refined_z, prior_states, x_mask, return_logp=True)
         # Compute energy scores
         energy, energy_grad = self.compute_energy(noised_z, x, x_mask)
         # Compute loss
