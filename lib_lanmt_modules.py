@@ -129,7 +129,6 @@ class LengthConverter(nn.Module):
             z_mask - latent mask, shape: B x L_x
         """
         n = z_mask.sum(1)
-        import pdb;pdb.set_trace()
         max_len = max(1, ls.max().long())
         arange_l = torch.arange(max_len)
         arange_z = torch.arange(z.size(1))
@@ -138,7 +137,7 @@ class LengthConverter(nn.Module):
             arange_z = arange_z.cuda()
         arange_l = arange_l[None, :].repeat(z.size(0), 1).float()
         mu = arange_l * n[:, None].float() / ls[:, None].float()
-        arange_z = arange_z[None, None, :].repeat(z.size(0), ls.max().long(), 1).float()
+        arange_z = arange_z[None, None, :].repeat(z.size(0), max_len, 1).float()
         if OPTS.fp16:
             arange_l = arange_l.half()
             mu = mu.half()
