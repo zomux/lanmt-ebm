@@ -92,7 +92,8 @@ class LatentScoreNetwork3(Transformer):
         base_latent = x.new_zeros((x.shape[0], x.shape[1], self._latent_size), requires_grad=True, dtype=torch.float)
         base_latent = torch.randn_like(base_latent) + base_latent
         # Compute delta inference
-        refined_z, prior_states = self.compute_delta_inference(x, x_mask, base_latent).detach()
+        refined_z, prior_states = self.compute_delta_inference(x, x_mask, base_latent)
+        refined_z = refined_z.detach()
         noise = torch.randn_like(refined_z)
         noised_z = refined_z + noise
         noised_z.requires_grad_(True)
