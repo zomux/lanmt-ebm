@@ -130,7 +130,8 @@ class LengthConverter(nn.Module):
         """
         n = z_mask.sum(1)
         import pdb;pdb.set_trace()
-        arange_l = torch.arange(ls.max().long())
+        max_len = max(1, ls.max().long())
+        arange_l = torch.arange(max_len)
         arange_z = torch.arange(z.size(1))
         if torch.cuda.is_available():
             arange_l = arange_l.cuda()
