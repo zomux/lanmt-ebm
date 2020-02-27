@@ -101,7 +101,6 @@ class LatentScoreNetwork3(Transformer):
         with torch.no_grad():
             _, _, refined_logp = self.compute_logits(refined_z, prior_states, x_mask, return_logp=True)
             _, _, noised_logp = self.compute_logits(noised_z, prior_states, x_mask, return_logp=True)
-        import pdb;pdb.set_trace()
         # Compute energy scores
         energy, energy_grad = self.compute_energy(noised_z, x, x_mask)
         # Compute loss
