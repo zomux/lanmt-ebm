@@ -111,7 +111,7 @@ class EnergyMatchingNetwork(Transformer):
         score_map = self.compute_loss(x, x_mask)
         return score_map
 
-    def refine(self, z, x, mask=None, n_steps=50, step_size=0.001):
+    def refine(self, z, x, mask=None, n_steps=50, step_size=0.01):
         if mask is not None:
             mask = mask.float()
         if not OPTS.evaluate:
