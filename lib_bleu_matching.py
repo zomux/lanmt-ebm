@@ -102,10 +102,8 @@ class EnergyMatchingNetwork(Transformer):
         # Compute energy scores
         energy, _ = self.compute_energy(noised_z, x, x_mask)
         # Compute loss
-        score_match_loss = (((energy_grad * (refined_z - noised_z) * x_mask[:, :, None]).sum(2).sum(1) - (refined_logp - noised_logp))**2).mean()
-        # score_match_loss = ((noise - energy_grad)**2).sum(2)
-        # score_match_loss = ((score_match_loss * x_mask).sum(1) / x_mask.sum(1)).mean()
-        return {"loss": score_match_loss}
+        import pdb;pdb.set_trace()
+        return {"loss": loss}
 
     def forward(self, x, y, sampling=False):
         x_mask = self.to_float(torch.ne(x, 0))
