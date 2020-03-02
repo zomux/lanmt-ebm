@@ -219,9 +219,9 @@ if OPTS.scorenet:
         from lanmt.lib_denoising import LatentDenoiseNetwork
         nmt = LatentDenoiseNetwork(nmt)
     else:
-        # from lanmt.lib_score_matching3 import LatentScoreNetwork3
-        from lanmt.lib_bleu_matching import EnergyMatchingNetwork
-        nmt = EnergyMatchingNetwork(nmt)
+        from lanmt.lib_score_matching3 import LatentScoreNetwork3
+        # from lanmt.lib_bleu_matching import EnergyMatchingNetwork
+        nmt = LatentScoreNetwork3(nmt)
 
 
 # Training
@@ -249,7 +249,7 @@ if OPTS.train or OPTS.all:
         n_valid_per_epoch=n_valid_per_epoch,
         criteria="loss",
         tensorboard_logdir=tb_logdir,
-        clip_norm=0.1 if OPTS.scorenet else 0
+        # clip_norm=0.1 if OPTS.scorenet else 0
     )
     # if OPTS.fp16:
     #     from apex import amp
