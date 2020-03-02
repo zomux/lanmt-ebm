@@ -52,7 +52,7 @@ class EnergyMatchingNetwork(Transformer):
         x_embeds = self.nmt().x_embed_layer(x)
         h = self._encoder(h + x_embeds, mask=mask)
         energy = self._hidden2energy(h)
-        mean_energy = ((energy.squeeze(2) * mask).sum(1) / mask.sum(1)).mean()
+        mean_energy = ((energy.squeeze(2) * mask).sum(1) / mask.sum(1))
         if return_grad:
             grad = torch.autograd.grad(mean_energy, latent, create_graph=True)[0]
         else:
