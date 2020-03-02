@@ -45,7 +45,7 @@ class EnergyMatchingNetwork(Transformer):
             nn.Linear(self._hidden_size // 2, 1)
         )
 
-    def compute_energy(self, latent, x, mask):
+    def compute_energy(self, latent, x, mask, return_grad=False):
         if mask is not None:
             mask = mask.float()
         h = self._latent2hidden(latent)
@@ -53,7 +53,10 @@ class EnergyMatchingNetwork(Transformer):
         h = self._encoder(h + x_embeds, mask=mask)
         energy = self._hidden2energy(h)
         mean_energy = ((energy.squeeze(2) * mask).sum(1) / mask.sum(1)).mean()
-        grad = torch.autograd.grad(mean_energy, latent, create_graph=True)[0]
+        if return_grad:
+            grad = torch.autograd.grad(mean_energy, latent, create_graph=True)[0]
+        else:
+            grad = None
         return energy, grad
 
     def compute_logits(self, latent_vec, prior_states, x_mask, return_logp=False):
