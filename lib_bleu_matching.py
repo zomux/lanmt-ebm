@@ -118,7 +118,7 @@ class EnergyMatchingNetwork(Transformer):
             with torch.no_grad():
                 refined_z, _ = self.compute_delta_inference(x, mask, z)
         for _ in range(n_steps):
-            energy, grad = self.compute_energy(z, x, mask)
+            energy, grad = self.compute_energy(z, x, mask, return_grad=True)
             if not OPTS.evaluate:
                 print((z - refined_z).norm(2).detach().cpu().numpy(),
                       energy.mean().detach().cpu().numpy(),
