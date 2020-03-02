@@ -219,8 +219,9 @@ if OPTS.scorenet:
         from lanmt.lib_denoising import LatentDenoiseNetwork
         nmt = LatentDenoiseNetwork(nmt)
     else:
-        from lanmt.lib_score_matching3 import LatentScoreNetwork3
-        nmt = LatentScoreNetwork3(nmt)
+        # from lanmt.lib_score_matching3 import LatentScoreNetwork3
+        from lanmt.lib_bleu_matching import EnergyMatchingNetwork
+        nmt = EnergyMatchingNetwork(nmt)
 
 
 # Training
