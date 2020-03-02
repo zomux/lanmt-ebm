@@ -96,10 +96,11 @@ class EnergyMatchingNetwork(Transformer):
         noised_latent = torch.randn_like(base_latent) + base_latent
         # Compute logp for both latent variables
         with torch.no_grad():
+            prior_states = self.nmt().prior_encoder(x, x_mask)
             _, _, base_logp = self.compute_logits(base_latent, prior_states, x_mask, return_logp=True)
             _, _, noised_logp = self.compute_logits(noised_latent, prior_states, x_mask, return_logp=True)
         # Compute energy scores
-        energy, energy_grad = self.compute_energy(noised_z, x, x_mask)
+        energy, _ = self.compute_energy(noised_z, x, x_mask)
         # Compute loss
         score_match_loss = (((energy_grad * (refined_z - noised_z) * x_mask[:, :, None]).sum(2).sum(1) - (refined_logp - noised_logp))**2).mean()
         # score_match_loss = ((noise - energy_grad)**2).sum(2)
