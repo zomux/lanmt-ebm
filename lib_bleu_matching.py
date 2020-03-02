@@ -19,7 +19,7 @@ from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
 
 
-class LatentScoreNetwork3(Transformer):
+class EnergyMatchingNetwork(Transformer):
 
     def __init__(self, lanmt_model, hidden_size=512, latent_size=8):
         """
@@ -30,10 +30,10 @@ class LatentScoreNetwork3(Transformer):
         self._latent_size = latent_size
         self.set_stepwise_training(False)
         self.compute_real_grad = True
-        super(LatentScoreNetwork3, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
+        super(EnergyMatchingNetwork, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         lanmt_model.train(False)
         self._lanmt = [lanmt_model]
-        self.enable_valid_grad = True
+        self.enable_valid_grad = False
 
     def prepare(self):
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
