@@ -93,19 +93,11 @@ class EnergyMatchingNetwork(Transformer):
     def compute_loss(self, x, x_mask):
         # Create latent variables
         base_latent = x.new_zeros((x.shape[0], x.shape[1], self._latent_size), requires_grad=True, dtype=torch.float)
-        base_latent = torch.randn_like(base_latent) + base_latent
-
-        # Compute cross-entropy loss and it's gradient
-        # Compute delta inference
-        refined_z, prior_states = self.compute_delta_inference(x, x_mask, base_latent)
-        refined_z = refined_z.detach()
-        noise = torch.randn_like(refined_z)
-        noised_z = refined_z + noise
-        noised_z.requires_grad_(True)
-        # Compute logp for both refined z and noised z
+        noised_latent = torch.randn_like(base_latent) + base_latent
+        # Compute logp for both latent variables
         with torch.no_grad():
-            _, _, refined_logp = self.compute_logits(refined_z, prior_states, x_mask, return_logp=True)
-            _, _, noised_logp = self.compute_logits(noised_z, prior_states, x_mask, return_logp=True)
+            _, _, base_logp = self.compute_logits(base_latent, prior_states, x_mask, return_logp=True)
+            _, _, noised_logp = self.compute_logits(noised_latent, prior_states, x_mask, return_logp=True)
         # Compute energy scores
         energy, energy_grad = self.compute_energy(noised_z, x, x_mask)
         # Compute loss
