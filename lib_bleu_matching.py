@@ -57,7 +57,7 @@ class EnergyMatchingNetwork(Transformer):
             grad = torch.autograd.grad(mean_energy, latent, create_graph=True)[0]
         else:
             grad = None
-        return energy, grad
+        return mean_energy, grad
 
     def compute_logits(self, latent_vec, prior_states, x_mask, return_logp=False):
         lanmt = self.nmt()
