@@ -288,6 +288,7 @@ if OPTS.test or OPTS.all:
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
+    print(model_path)
     nmt.load(model_path)
     if torch.cuda.is_available():
         nmt.cuda()
