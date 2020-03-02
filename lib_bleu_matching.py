@@ -91,9 +91,11 @@ class EnergyMatchingNetwork(Transformer):
             return sampled_z, prior_states
 
     def compute_loss(self, x, x_mask):
-        # Compute cross-entropy loss and it's gradient
+        # Create latent variables
         base_latent = x.new_zeros((x.shape[0], x.shape[1], self._latent_size), requires_grad=True, dtype=torch.float)
         base_latent = torch.randn_like(base_latent) + base_latent
+
+        # Compute cross-entropy loss and it's gradient
         # Compute delta inference
         refined_z, prior_states = self.compute_delta_inference(x, x_mask, base_latent)
         refined_z = refined_z.detach()
