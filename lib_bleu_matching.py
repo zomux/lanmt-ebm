@@ -112,6 +112,7 @@ class EnergyMatchingNetwork(Transformer):
         return score_map
 
     def refine(self, z, x, mask=None, n_steps=10, step_size=0.1):
+        return z
         if mask is not None:
             mask = mask.float()
         if not OPTS.evaluate:
