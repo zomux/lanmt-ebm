@@ -100,7 +100,7 @@ class EnergyMatchingNetwork(Transformer):
             _, _, base_logp = self.compute_logits(base_latent, prior_states, x_mask, return_logp=True)
             _, _, noised_logp = self.compute_logits(noised_latent, prior_states, x_mask, return_logp=True)
         # Compute energy scores
-        energy, _ = self.compute_energy(noised_z, x, x_mask)
+        energy, _ = self.compute_energy(noised_latent, x, x_mask)
         # Compute loss
         loss = energy - (noised_logp - base_logp)
         loss = loss.mean()
