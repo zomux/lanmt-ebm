@@ -152,9 +152,9 @@ class LANMTModel(Transformer):
 
         # ----------- Compute prior and approximated posterior -------------#
         # Compute p(z|x)
-        prior_prob = self.standard_gaussian_dist(x.shape[0], x.shape[1])
+        prior_prob = self.standard_gaussian_dist(seq.shape[0], seq.shape[1])
         # Compute q(z|x,y) and sample z
-        q_states = self.compute_Q_states(self.x_embed_layer(x), x_mask, y, y_mask)
+        q_states = self.compute_Q_states(seq, mask)
         # Sample latent variables from q(z|x,y)
         sampled_z, q_prob = self.sample_from_Q(q_states)
 
