@@ -233,3 +233,16 @@ class LatentEncodingNetwork(Transformer):
         shape = (batch_size, seq_size, self.latent_dim)
         return torch.cat([torch.zeros(shape).cuda(), torch.ones(shape).cuda() * 0.55], 2)
 
+
+if __name__ == '__main__':
+    import sys
+    sys.path.append(".")
+    # Testing
+    snet = LatentEncodingNetwork()
+    x = torch.tensor([[1,2,3,4,5]])
+    y = torch.tensor([[1,2,3]])
+    if torch.cuda.is_available():
+        snet.cuda()
+        x = x.cuda()
+        y = y.cuda()
+    snet(x, y)
