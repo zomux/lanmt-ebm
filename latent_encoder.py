@@ -67,7 +67,6 @@ ap.add_argument("--opt_x3longertrain", action="store_true")
 # Options for LANMT
 ap.add_argument("--opt_latentdim", default=8, type=int, help="dimension of latent variables")
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
-ap.add_argument("--opt_annealbudget", action="store_true", help="switch of annealing KL budget")
 ap.add_argument("--opt_fixbug1", action="store_true", help="fix bug in length converter")
 ap.add_argument("--opt_scorenet", action="store_true")
 ap.add_argument("--opt_denoise", action="store_true")
@@ -188,7 +187,6 @@ lanmt_options = basic_options.copy()
 lanmt_options.update(dict(
     latent_dim=OPTS.latentdim,
     KL_budget=0. if OPTS.finetune else OPTS.klbudget,
-    budget_annealing=OPTS.annealbudget,
     max_train_steps=training_maxsteps,
 ))
 
