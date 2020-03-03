@@ -22,25 +22,13 @@ from nmtlab.utils import OPTS
 
 class LANMTModel(Transformer):
 
-    def __init__(self, prior_layers=3, decoder_layers=1,
+    def __init__(self, prior_layers=0, q_layers=3, decoder_layers=1,
                  latent_dim=8,
                  KL_budget=1., KL_weight=1.,
                  budget_annealing=True,
                  max_train_steps=100000,
                  **kwargs):
-        """Create Latent-variable non-autoregressive NMT model.
-
-        Args:
-            prior_layers - number of layers in prior p(z|x)
-            decoder_layers - number of layers in decoder p(y|z)
-            q_layers - number of layers in approximator q(z|x,y)
-            latent_dim - dimension of latent variables
-            KL_budget - budget of KL divergence
-            KL_weight - weight of the KL term,
-            budget_annealing - whether anneal the KL budget
-            max_train_steps - max training iterations
-        """
-        self.prior_layers = prior_layers
+        self
         self.decoder_layers = decoder_layers
         self.q_layers = prior_layers
         self.latent_dim = latent_dim
