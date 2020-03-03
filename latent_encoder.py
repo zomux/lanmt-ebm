@@ -82,17 +82,10 @@ ap.add_argument("--opt_Tcandidate_num", default=50, type=int, help="number of la
 ap.add_argument("--opt_Tbatch_size", default=8000, type=int, help="batch size for batch translate")
 
 # Experimental options
-ap.add_argument("--opt_fp16", action="store_true")
 ap.add_argument("--opt_nokl", action="store_true")
 ap.add_argument("--opt_klbudget", type=float, default=1.0)
 ap.add_argument("--opt_beginanneal", type=int, default=-1)
 ap.add_argument("--opt_fastanneal", action="store_true")
-ap.add_argument("--opt_diracq", action="store_true")
-ap.add_argument("--opt_sigmoidvar", action="store_true")
-ap.add_argument("--opt_pvarbound", type=float, default=0.)
-ap.add_argument("--opt_interpretability", action="store_true")
-ap.add_argument("--opt_zeroprior", action="store_true")
-ap.add_argument("--opt_disentangle", action="store_true")
 
 # Paths
 ap.add_argument("--model_path",
