@@ -67,7 +67,6 @@ class LANMTModel(Transformer):
 
     def compute_Q(self, seq):
         mask = self.to_float(torch.ne(seq, 0))
-        # Compute p(z|y,x) and sample z
         q_states = self.compute_Q_states(seq, mask)
         sampled_latent, q_prob = self.sample_from_Q(q_states, sampling=False)
         return sampled_latent, q_prob
@@ -81,67 +80,17 @@ class LANMTModel(Transformer):
         full_vector = self.latent2vector_nn(sampled_z)
         return full_vector, q_prob
 
-    def compute_length_predictor_loss(self, xz_states, z, z_mask, y_mask):
-        """Get the loss for length predictor.
-        """
-        y_lens = y_mask.sum(1) - 1
-        delta = (y_lens - z_mask.sum(1) + 50.).long().clamp(0, 99)
-        mean_z = ((z + xz_states) * z_mask[:, :, None]).sum(1) / z_mask.sum(1)[:, None]
-        logits = self.length_predictor(mean_z)
-        length_loss = F.cross_entropy(logits, delta, reduction="mean")
-        length_acc = self.to_float(logits.argmax(-1) == delta).mean()
-        length_scores = {
-            "len_loss": length_loss,
-            "len_acc": length_acc
-        }
-        return length_scores
-
     def compute_vae_KL(self, prior_prob, q_prob):
         """Compute KL divergence given two Gaussians.
         """
         mu1 = q_prob[:, :, :self.latent_dim]
         var1 = F.softplus(q_prob[:, :, self.latent_dim:])
         mu2 = prior_prob[:, :, :self.latent_dim]
-        if OPTS.sigmoidvar:
-            var2 = torch.sigmoid(prior_prob[:, :, self.latent_dim:])
-        else:
-            var2 = F.softplus(prior_prob[:, :, self.latent_dim:])
-        if OPTS.pvarbound != 0.:
-            var2 = torch.clamp(var2, 0, OPTS.pvarbound)
-        if OPTS.diracq:
-            var2 = 0.5
-            kl = math.log(var2 * math.sqrt(2 * math.pi) + 1e-8) + 0.5 * ((mu1 - mu2) ** 2 / (var2 ** 2 + 1e-8))
-            # kl = math.log(math.sqrt(2 * math.pi)) + 0.5 * ((mu1 - mu2) ** 2)
-        else:
-            kl = torch.log(var2 / (var1 + 1e-8) + 1e-8) + (
+        var2 = F.softplus(prior_prob[:, :, self.latent_dim:])
+        kl = torch.log(var2 / (var1 + 1e-8) + 1e-8) + (
                     (torch.pow(var1, 2) + torch.pow(mu1 - mu2, 2)) / (2 * torch.pow(var2, 2))) - 0.5
         kl = kl.sum(-1)
         return kl
-
-    def convert_length(self, z, z_mask, target_lens):
-        """Adjust the number of latent variables.
-        """
-        rc = 1. / math.sqrt(2)
-        converted_vectors, _ = self.length_converter(z, target_lens, z_mask)
-        pos_embed = self.pos_embed_layer(converted_vectors)
-        len_embed = self.length_embed_layer(target_lens.long())
-        converted_vectors = rc * converted_vectors + 0.5 * pos_embed + 0.5 * len_embed[:, None, :]
-        return converted_vectors
-
-    def convert_length_with_delta(self, z, z_mask, delta):
-        """Adjust the number of latent variables with predicted delta
-        """
-        z = z.clone()
-        z_lens = z_mask.sum(1).long()
-        y_lens = z_lens + delta
-        converted_vectors = self.convert_length(z, z_mask, y_lens)
-        # Create target-side mask
-        max_len = max(1, y_lens.max().long())
-        arange = torch.arange(max_len)
-        if torch.cuda.is_available():
-            arange = arange.cuda()
-        y_mask = self.to_float(arange[None, :].repeat(z.size(0), 1) < y_lens[:, None])
-        return converted_vectors, y_mask, y_lens
 
     def deterministic_sample_from_prob(self, z_prob):
         """ Obtain the mean vectors from multi-variate normal distributions.
@@ -149,14 +98,6 @@ class LANMTModel(Transformer):
         mean_vector = z_prob[:, :, :self.latent_dim]
         full_vector = self.latent2vector_nn(mean_vector)
         return full_vector
-
-    def predict_length(self, prior_states, z, z_mask):
-        """Predict the target length based on latent variables and source states.
-        """
-        mean_z = ((z + prior_states) * z_mask[:, :, None]).sum(1) / z_mask.sum(1)[:, None]
-        logits = self.length_predictor(mean_z)
-        delta = logits.argmax(-1) - 50
-        return delta
 
     def compute_final_loss(self, q_prob, prior_prob, x_mask, score_map):
         """ Compute the report the loss.
