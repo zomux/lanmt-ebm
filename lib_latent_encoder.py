@@ -152,23 +152,11 @@ class LANMTModel(Transformer):
 
         # ----------- Compute prior and approximated posterior -------------#
         # Compute p(z|x)
-        prior_states = self.prior_encoder(x, x_mask)
-        if OPTS.zeroprior:
-            prior_prob = self.standard_gaussian_dist(x.shape[0], x.shape[1])
-        else:
-            prior_prob = self.prior_prob_estimator(prior_states)
+        prior_prob = self.standard_gaussian_dist(x.shape[0], x.shape[1])
         # Compute q(z|x,y) and sample z
         q_states = self.compute_Q_states(self.x_embed_layer(x), x_mask, y, y_mask)
         # Sample latent variables from q(z|x,y)
-        z_mask = x_mask
         sampled_z, q_prob = self.sample_from_Q(q_states)
-
-        # -----------------  Convert the length of latents ------------------#
-        # Compute length prediction loss
-        length_scores = self.compute_length_predictor_loss(prior_states, sampled_z, z_mask, y_mask)
-        score_map.update(length_scores)
-        # Padding z to fit target states
-        z_with_y_length = self.convert_length(sampled_z, z_mask, y_mask.sum(-1))
 
         # --------------------------  Decoder -------------------------------#
         decoder_states = self.decoder(z_with_y_length, y_mask, prior_states, x_mask)
