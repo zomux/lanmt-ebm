@@ -16,7 +16,7 @@ from nmtlab.modules.transformer_modules import TransformerEmbedding, LabelSmooth
 from lanmt.lib_simple_encoders import ConvolutionalEncoder
 from lanmt.lib_vae import VAEBottleneck
 from nmtlab.models import Transformer
-from nmtlab.utils import OPTS
+from nmtlab.utils import OPTS, TensorMap
 
 
 class LatentEncodingNetwork(Transformer):
@@ -238,7 +238,7 @@ if __name__ == '__main__':
     import sys
     sys.path.append(".")
     # Testing
-    snet = LatentEncodingNetwork()
+    snet = LatentEncodingNetwork(src_vocab_size=1000, tgt_vocab_size=1000)
     x = torch.tensor([[1,2,3,4,5]])
     y = torch.tensor([[1,2,3]])
     if torch.cuda.is_available():
