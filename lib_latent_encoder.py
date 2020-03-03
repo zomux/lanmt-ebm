@@ -20,7 +20,7 @@ from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
 
 
-class LANMTModel(Transformer):
+class LatentEncodingNetwork(Transformer):
 
     def __init__(self, prior_layers=0, q_layers=3, decoder_layers=1,
                  latent_dim=8,
@@ -39,7 +39,7 @@ class LANMTModel(Transformer):
         self.training_criteria = "loss"
         OPTS.fixbug1 = True
         OPTS.fixbug2 = True
-        super(LANMTModel, self).__init__(**kwargs)
+        super(LatentEncodingNetwork, self).__init__(**kwargs)
 
     def prepare(self):
         """Define the modules
