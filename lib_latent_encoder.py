@@ -55,8 +55,6 @@ class LANMTModel(Transformer):
         # Bottleneck
         self.bottleneck = VAEBottleneck(self.hidden_size, z_size=self.latent_dim, standard_var=True)
         self.latent2vector_nn = nn.Linear(self.latent_dim, self.hidden_size)
-        # Length prediction
-        self.length_predictor = nn.Linear(self.hidden_size, 100)
         # Word probability estimator
         self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
         self.label_smooth = LabelSmoothingKLDivLoss(0.1, self._tgt_vocab_size, 0)
@@ -66,16 +64,11 @@ class LANMTModel(Transformer):
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
-        # if self._fp16:
-        #     self.half()
 
-    def compute_Q(self, x, y):
-        """Compute the approximated posterior q(z|x,y) and sample from it.
-        """
-        x_mask = self.to_float(torch.ne(x, 0))
-        y_mask = self.to_float(torch.ne(y, 0))
+    def compute_Q(self, seq):
+        mask = self.to_float(torch.ne(seq, 0))
         # Compute p(z|y,x) and sample z
-        q_states = self.compute_Q_states(self.x_embed_layer(x), x_mask, y, y_mask)
+        q_states = self.compute_Q_states(self.embed_layer(x), x_mask, y, y_mask)
         sampled_latent, q_prob = self.sample_from_Q(q_states, sampling=False)
         return sampled_latent, q_prob
 
