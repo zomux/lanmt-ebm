@@ -15,6 +15,7 @@ sys.path.append(".")
 from lanmt.lib_lanmt_modules import TransformerEncoder
 from lanmt.lib_lanmt_model import LANMTModel
 from lanmt.lib_simple_encoders import ConvolutionalEncoder
+from lanmt.lib_vae import VAEBottleneck
 from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
 
@@ -32,11 +33,11 @@ class LatentEncodingNetwork(Transformer):
         super(LatentEncodingNetwork, self).__init__(src_vocab_size=src_vocab_size, tgt_vocab_size=1)
 
     def prepare(self):
-        # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
         self.encoder = ConvolutionalEncoder(None, self._hidden_size, 3)
         self.decoder = ConvolutionalEncoder(None, self._hidden_size, 1)
         self.latent2hidden = nn.Linear(self._latent_size, self._hidden_size)
-        self._hidden2energy = nn.Sequential(
+        self.bottleneck = VAEBottleneck(self._hidden_size, self._latent_size, standard_var=1)
+        self.expander = nn.Sequential(
             nn.Linear(self._hidden_size, self.hidden_size // 2),
             nn.ReLU(),
             nn.Linear(self._hidden_size // 2, 1)
