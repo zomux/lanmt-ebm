@@ -37,6 +37,8 @@ class LANMTModel(Transformer):
         self.budget_annealing = budget_annealing
         self.max_train_steps = max_train_steps
         self.training_criteria = "loss"
+        OPTS.fixbug1 = True
+        OPTS.fixbug2 = True
         super(LANMTModel, self).__init__(**kwargs)
 
     def prepare(self):
@@ -51,12 +53,6 @@ class LANMTModel(Transformer):
         # Prior p(z|x)
         # Approximator q(z|x,y)
         self.prior_prob_estimator = nn.Linear(self.hidden_size, self.latent_dim * 2)
-        if OPTS.disentangle:
-            from lib_simple_encoders import DisentangledCrossEncoder, DisentangledEncoder
-            self.prior_encoder = DisentangledEncoder(self.x_embed_layer, self.hidden_size, self.prior_layers)
-            self.q_encoder_y = DisentangledEncoder(self.y_embed_layer, self.hidden_size, self.q_layers)
-            self.q_encoder_xy = DisentangledCrossEncoder(None, self.hidden_size, self.q_layers)
-        else:
             self.prior_encoder = TransformerEncoder(self.x_embed_layer, self.hidden_size, self.prior_layers)
             self.q_encoder_y = TransformerEncoder(self.y_embed_layer, self.hidden_size, self.q_layers)
             self.q_encoder_xy = TransformerCrossEncoder(None, self.hidden_size, self.q_layers)
