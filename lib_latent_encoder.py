@@ -21,7 +21,7 @@ from nmtlab.utils import OPTS
 
 class LatentEncodingNetwork(Transformer):
 
-    def __init__(self, lanmt_model, hidden_size=512, latent_size=8):
+    def __init__(self, lanmt_model, hidden_size=512, latent_size=8, src_voab_size=40000):
         """
         Args:
             lanmt_model(LANMTModel)
@@ -29,16 +29,13 @@ class LatentEncodingNetwork(Transformer):
         self._hidden_size = hidden_size
         self._latent_size = latent_size
         self.set_stepwise_training(False)
-        self.compute_real_grad = True
-        super(LatentEncodingNetwork, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
-        lanmt_model.train(False)
-        self._lanmt = [lanmt_model]
-        self.enable_valid_grad = False
+        super(LatentEncodingNetwork, self).__init__(src_vocab_size=src_vocab_size, tgt_vocab_size=1)
 
     def prepare(self):
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
-        self._encoder = ConvolutionalEncoder(None, self._hidden_size, 3)
-        self._latent2hidden = nn.Linear(self._latent_size, self._hidden_size)
+        self.encoder = ConvolutionalEncoder(None, self._hidden_size, 3)
+        self.decoder = ConvolutionalEncoder(None, self._hidden_size, 1)
+        self.latent2hidden = nn.Linear(self._latent_size, self._hidden_size)
         self._hidden2energy = nn.Sequential(
             nn.Linear(self._hidden_size, self.hidden_size // 2),
             nn.ReLU(),
