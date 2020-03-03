@@ -39,7 +39,7 @@ class LatentEncodingNetwork(Transformer):
         self.training_criteria = "loss"
         OPTS.fixbug1 = True
         OPTS.fixbug2 = True
-        super(LatentEncodingNetwork, self).__init__(**kwargs) 
+        super(LatentEncodingNetwork, self).__init__(**kwargs)
 
     def prepare(self):
         """Define the modules
