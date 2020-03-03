@@ -68,21 +68,15 @@ class LANMTModel(Transformer):
     def compute_Q(self, seq):
         mask = self.to_float(torch.ne(seq, 0))
         # Compute p(z|y,x) and sample z
-        q_states = self.compute_Q_states(self.x_embed_layer(x), x_mask, y, y_mask)
+        q_states = self.compute_Q_states(seq, mask)
         sampled_latent, q_prob = self.sample_from_Q(q_states, sampling=False)
         return sampled_latent, q_prob
 
-    def compute_Q_states(self, x_states, x_mask, y, y_mask):
-        """Compute the states for estimating q(z|x,y).
-        """
-        states = self.q_encoder_xy(x_states, x_mask, y_states, y_mask)
+    def compute_Q_states(self, seq, mask):
+        states = self.q_encoder(seq, mask)
         return states
 
     def sample_from_Q(self, q_states, sampling=True):
-        """Estimate q(z|x,y) and sample a latent variable from it.
-        """
-        if OPTS.diracq:
-            sampling = False
         sampled_z, q_prob = self.bottleneck(q_states, sampling=sampling)
         full_vector = self.latent2vector_nn(sampled_z)
         return full_vector, q_prob
