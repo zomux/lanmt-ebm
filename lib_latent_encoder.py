@@ -159,21 +159,21 @@ class LANMTModel(Transformer):
         sampled_z, q_prob = self.sample_from_Q(q_states)
 
         # --------------------------  Decoder -------------------------------#
-        decoder_states = self.decoder(z_with_y_length, y_mask, prior_states, x_mask)
+        decoder_states = self.decoder(sampled_z, mask)
 
         # --------------------------  Compute losses ------------------------#
         decoder_outputs = TensorMap({"final_states": decoder_states})
-        denom = x.shape[0]
+        denom = seq.shape[0]
         if self._shard_size is not None and self._shard_size > 0:
             loss_scores, decoder_tensors, decoder_grads = self.compute_shard_loss(
-                decoder_outputs, y, y_mask, denominator=denom, ignore_first_token=False, backward=False
+                decoder_outputs, seq, mask, denominator=denom, ignore_first_token=False, backward=False
             )
-            loss_scores["word_acc"] *= float(y_mask.shape[0]) / self.to_float(y_mask.sum())
+            loss_scores["word_acc"] *= float(mask.shape[0]) / self.to_float(mask.sum())
             score_map.update(loss_scores)
         else:
             raise SystemError("Shard size must be setted or the memory is not enough for this model.")
 
-        score_map, remain_loss = self.compute_final_loss(q_prob, prior_prob, z_mask, score_map)
+        score_map, remain_loss = self.compute_final_loss(q_prob, prior_prob, mask, score_map)
         # Report smoothed BLEU during validation
         if not torch.is_grad_enabled() and self.training_criteria == "BLEU":
             logits = self.expander_nn(decoder_outputs["final_states"])
