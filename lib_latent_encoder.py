@@ -47,9 +47,6 @@ class LANMTModel(Transformer):
         # Embedding layers
         self.embed_layer = TransformerEmbedding(self._src_vocab_size, self.embed_size)
         self.pos_embed_layer = PositionalEmbedding(self.hidden_size)
-        # Length Transformation
-        self.length_converter = LengthConverter()
-        self.length_embed_layer = nn.Embedding(500, self.hidden_size)
         # Prior p(z|x)
         # Approximator q(z|x,y)
         self.prior_prob_estimator = nn.Linear(self.hidden_size, self.latent_dim * 2)
