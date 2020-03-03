@@ -164,9 +164,6 @@ if nmtlab.__version__ < "0.7.0":
     print("lanmt now requires nmtlab >= 0.7.0")
     print("Update by pip install -U nmtlab")
     sys.exit()
-if OPTS.fp16:
-    print("fp16 option is not ready")
-    sys.exit()
 
 # Define dataset
 if OPTS.distill:
@@ -175,7 +172,6 @@ else:
     tgt_corpus = train_tgt_corpus
 n_valid_samples = 5000 if OPTS.finetune else 500
 if OPTS.train:
-    OPTS.batchtokens = 6144
     dataset = MTDataset(
         src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
         src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
@@ -205,22 +201,7 @@ lanmt_options.update(dict(
     fp16=OPTS.fp16
 ))
 
-nmt = LANMTModel(**lanmt_options)
-if OPTS.scorenet:
-    OPTS.shard = 0
-    lanmt_model_path = OPTS.model_path.replace("_scorenet", "")
-    lanmt_model_path = lanmt_model_path.replace("_denoise", "")
-    assert os.path.exists(lanmt_model_path)
-    nmt.load(lanmt_model_path)
-    if torch.cuda.is_available():
-        nmt.cuda()
-    if OPTS.denoise:
-        from lanmt.lib_denoising import LatentDenoiseNetwork
-        nmt = LatentDenoiseNetwork(nmt)
-    else:
-        from lanmt.lib_score_matching3 import LatentScoreNetwork3
-        # from lanmt.lib_bleu_matching import EnergyMatchingNetwork
-        nmt = LatentScoreNetwork3(nmt)
+nmt = LatentEncodingNetwork(**lanmt_options)
 
 
 # Training
