@@ -147,8 +147,8 @@ class LANMTModel(Transformer):
         """Model training.
         """
         score_map = {}
-        x_mask = self.to_float(torch.ne(x, 0))
-        y_mask = self.to_float(torch.ne(y, 0))
+        seq = y
+        mask = self.to_float(torch.ne(seq, 0))
 
         # ----------- Compute prior and approximated posterior -------------#
         # Compute p(z|x)
