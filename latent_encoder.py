@@ -186,12 +186,10 @@ basic_options = dict(
 
 lanmt_options = basic_options.copy()
 lanmt_options.update(dict(
-    prior_layers=OPTS.priorl, decoder_layers=OPTS.decoderl,
     latent_dim=OPTS.latentdim,
     KL_budget=0. if OPTS.finetune else OPTS.klbudget,
     budget_annealing=OPTS.annealbudget,
     max_train_steps=training_maxsteps,
-    fp16=OPTS.fp16
 ))
 
 nmt = LatentEncodingNetwork(**lanmt_options)
