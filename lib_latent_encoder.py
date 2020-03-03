@@ -23,7 +23,7 @@ class LatentEncodingNetwork(Transformer):
 
     def __init__(self, prior_layers=0, q_layers=2, decoder_layers=2,
                  latent_dim=8,
-                 KL_budget=1., KL_weight=1.,
+                 KL_budget=10., KL_weight=1.,
                  budget_annealing=True,
                  max_train_steps=100000,
                  **kwargs):
