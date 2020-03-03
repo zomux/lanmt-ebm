@@ -174,19 +174,11 @@ class LANMTModel(Transformer):
             raise SystemError("Shard size must be setted or the memory is not enough for this model.")
 
         score_map, remain_loss = self.compute_final_loss(q_prob, prior_prob, mask, score_map)
-        # Report smoothed BLEU during validation
-        if not torch.is_grad_enabled() and self.training_criteria == "BLEU":
-            logits = self.expander_nn(decoder_outputs["final_states"])
-            predictions = logits.argmax(-1)
-            score_map["BLEU"] = - self.get_BLEU(predictions, y)
-
         # --------------------------  Bacprop gradient --------------------#
         if self._shard_size is not None and self._shard_size > 0 and decoder_tensors is not None:
             decoder_tensors.append(remain_loss)
             decoder_grads.append(None)
             torch.autograd.backward(decoder_tensors, decoder_grads)
-        # if torch.isnan(score_map["loss"]) or torch.isinf(score_map["loss"]):
-        #     import pdb;pdb.set_trace()
         return score_map
 
     def translate(self, x, latent=None, prior_states=None, refine_step=0):
@@ -243,17 +235,3 @@ class LANMTModel(Transformer):
         shape = (batch_size, seq_size, self.latent_dim)
         return torch.cat([torch.zeros(shape).cuda(), torch.ones(shape).cuda() * 0.55], 2)
 
-    def get_BLEU(self, batch_y_hat, batch_y):
-        """Get the average smoothed BLEU of the predictions."""
-        hyps = batch_y_hat.tolist()
-        refs = batch_y.tolist()
-        bleus = []
-        for hyp, ref in zip(hyps, refs):
-            if 2 in hyp:
-                hyp = hyp[:hyp.index(2)]
-            if 2 in ref:
-                ref = ref[:ref.index(2)]
-            hyp = hyp[1:]
-            ref = ref[1:]
-            bleus.append(smoothed_bleu(hyp, ref))
-        return torch.tensor(np.mean(bleus) * 100.)
