@@ -21,7 +21,7 @@ from nmtlab.utils import OPTS
 
 class LatentEncodingNetwork(Transformer):
 
-    def __init__(self, prior_layers=0, q_layers=3, decoder_layers=1,
+    def __init__(self, prior_layers=0, q_layers=2, decoder_layers=2,
                  latent_dim=8,
                  KL_budget=1., KL_weight=1.,
                  budget_annealing=True,
