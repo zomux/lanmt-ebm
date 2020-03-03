@@ -28,7 +28,7 @@ class LANMTModel(Transformer):
                  budget_annealing=True,
                  max_train_steps=100000,
                  **kwargs):
-        self
+        self.prior_layers = prior_layers
         self.decoder_layers = decoder_layers
         self.q_layers = prior_layers
         self.latent_dim = latent_dim
@@ -36,18 +36,14 @@ class LANMTModel(Transformer):
         self.KL_weight = KL_weight
         self.budget_annealing = budget_annealing
         self.max_train_steps = max_train_steps
-        if OPTS.finetune:
-            self.training_criteria = "BLEU"
-        else:
-            self.training_criteria = "loss"
+        self.training_criteria = "loss"
         super(LANMTModel, self).__init__(**kwargs)
 
     def prepare(self):
         """Define the modules
         """
         # Embedding layers
-        self.x_embed_layer = TransformerEmbedding(self._src_vocab_size, self.embed_size)
-        self.y_embed_layer = TransformerEmbedding(self._tgt_vocab_size, self.embed_size)
+        self.embed_layer = TransformerEmbedding(self._src_vocab_size, self.embed_size)
         self.pos_embed_layer = PositionalEmbedding(self.hidden_size)
         # Length Transformation
         self.length_converter = LengthConverter()
