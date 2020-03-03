@@ -12,8 +12,7 @@ import numpy as np
 import sys
 sys.path.append(".")
 
-from lanmt.lib_lanmt_modules import TransformerEncoder
-from lanmt.lib_lanmt_model import LANMTModel
+from nmtlab.modules.transformer_modules import TransformerEmbedding
 from lanmt.lib_simple_encoders import ConvolutionalEncoder
 from lanmt.lib_vae import VAEBottleneck
 from nmtlab.models import Transformer
@@ -46,7 +45,6 @@ class LatentEncodingNetwork(Transformer):
         """
         # Embedding layers
         self.embed_layer = TransformerEmbedding(self._src_vocab_size, self.embed_size)
-        self.pos_embed_layer = PositionalEmbedding(self.hidden_size)
         # Prior p(z|x)
         # Approximator q(z|x)
         self.q_encoder = ConvolutionalEncoder(self.embed_layer, self.hidden_size, self.q_layers)
