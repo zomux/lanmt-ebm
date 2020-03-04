@@ -253,12 +253,12 @@ if OPTS.test or OPTS.all:
     tgt_vocab = Vocab(tgt_vocab_path)
     result_path = OPTS.result_path
     # Read data
-    lines = open(test_src_corpus).readlines()
+    lines = open(test_tgt_corpus).readlines()
     trains_stop_stdout_monitor()
     with open(OPTS.result_path, "w") as outf:
         for i, line in enumerate(lines):
             # Make a batch
-            tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
+            tokens = tgt_vocab.encode("<s> {} </s>".format(line.strip()).split())
             x = torch.tensor([tokens])
             if torch.cuda.is_available():
                 x = x.cuda()
