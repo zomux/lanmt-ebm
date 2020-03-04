@@ -263,6 +263,8 @@ if OPTS.test or OPTS.all:
             if torch.cuda.is_available():
                 x = x.cuda()
             mask = torch.ne(x, 0)
+            # Compute codes
+            codes = nmt.compute_codes(x)
             import pdb;pdb.set_trace()
             # Predict latent and target words from prior
             targets, _, prior_states = nmt.translate(x)
