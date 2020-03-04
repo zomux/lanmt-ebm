@@ -254,7 +254,6 @@ if OPTS.test or OPTS.all:
     result_path = OPTS.result_path
     # Read data
     lines = open(test_src_corpus).readlines()
-    decode_times = []
     trains_stop_stdout_monitor()
     with open(OPTS.result_path, "w") as outf:
         for i, line in enumerate(lines):
@@ -264,29 +263,9 @@ if OPTS.test or OPTS.all:
             if torch.cuda.is_available():
                 x = x.cuda()
             mask = torch.ne(x, 0)
-            start_time = time.time()
             # Predict latent and target words from prior
-            if not OPTS.scorenet:
-                targets, _, prior_states = nmt.translate(x)
-                target_tokens = targets.cpu().numpy()[0].tolist()
-            for infer_step in range(OPTS.Trefine_steps):
-                # Sample latent from Q and draw a new target prediction
-                prev_target = tuple(target_tokens)
-                new_latent, _ = nmt.compute_Q(x, targets)
-                targets, _, _ = nmt.translate(x, latent=new_latent, prior_states=prior_states,
-                                              refine_step=infer_step + 1)
-                target_tokens = targets[0].cpu().numpy().tolist()
-                # Early stopping
-                if tuple(target_tokens) == tuple(prev_target):
-                    break
-            if targets is None:
-                target_tokens = [2, 2, 2]
-            elif OPTS.Tteacher_rescore:
-                scores = OPTS.teacher(x, targets)
-                target_tokens = targets[scores.argmax()]
-            # Record decoding time
-            end_time = time.time()
-            decode_times.append((end_time - start_time) * 1000.)
+            targets, _, prior_states = nmt.translate(x)
+            target_tokens = targets.cpu().numpy()[0].tolist()
             # Convert token IDs back to words
             target_tokens = [t for t in target_tokens if t > 2]
             target_words = tgt_vocab.decode(target_tokens)
