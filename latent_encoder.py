@@ -268,7 +268,6 @@ if OPTS.test or OPTS.all:
             tokens = nmt.compute_tokens(codes, mask)
             import pdb;pdb.set_trace()
             # Predict latent and target words from prior
-            targets, _, prior_states = nmt.translate(x)
             target_tokens = targets.cpu().numpy()[0].tolist()
             # Convert token IDs back to words
             target_tokens = [t for t in target_tokens if t > 2]
