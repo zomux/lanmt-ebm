@@ -263,6 +263,7 @@ if OPTS.test or OPTS.all:
             if torch.cuda.is_available():
                 x = x.cuda()
             mask = torch.ne(x, 0)
+            import pdb;pdb.set_trace()
             # Predict latent and target words from prior
             targets, _, prior_states = nmt.translate(x)
             target_tokens = targets.cpu().numpy()[0].tolist()
@@ -275,7 +276,6 @@ if OPTS.test or OPTS.all:
             sys.stdout.flush()
     sys.stdout.write("\n")
     trains_restore_stdout_monitor()
-    print("Average decoding time: {:.0f}ms, std: {:.0f}".format(np.mean(decode_times), np.std(decode_times)))
 
 # Translate multiple sentences in batch
 if OPTS.batch_test:
