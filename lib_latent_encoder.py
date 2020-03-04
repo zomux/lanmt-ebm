@@ -179,6 +179,8 @@ class LatentEncodingNetwork(Transformer):
             torch.autograd.backward(decoder_tensors, decoder_grads)
         return score_map
 
+    def compute_codes(self, seq):
+        
     def translate(self, x, latent=None, prior_states=None, refine_step=0):
         """ Testing codes.
         """
