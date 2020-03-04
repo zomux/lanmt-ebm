@@ -262,9 +262,10 @@ if OPTS.test or OPTS.all:
             x = torch.tensor([tokens])
             if torch.cuda.is_available():
                 x = x.cuda()
-            mask = torch.ne(x, 0)
+            mask = torch.ne(x, 0).float()
             # Compute codes
             codes = nmt.compute_codes(x)
+            tokens = nmt.compute_tokens(codes, mask)
             import pdb;pdb.set_trace()
             # Predict latent and target words from prior
             targets, _, prior_states = nmt.translate(x)

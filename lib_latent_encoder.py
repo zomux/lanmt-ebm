@@ -189,7 +189,7 @@ class LatentEncodingNetwork(Transformer):
         code_vectors = self.latent2vector_nn(codes)
         decoder_states = self.decoder(code_vectors, mask)
         logits = self.expander_nn(decoder_states)
-        return logits
+        return logits.argmax(-1)
 
     def standard_gaussian_dist(self, batch_size, seq_size):
         shape = (batch_size, seq_size, self.latent_dim)
