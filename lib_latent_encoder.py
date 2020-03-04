@@ -182,10 +182,11 @@ class LatentEncodingNetwork(Transformer):
     def compute_codes(self, seq):
         mask = self.to_float(torch.ne(seq, 0))
         q_states = self.compute_Q_states(seq, mask)
-        self.bottleneck()
-        sampled_z, q_prob = self.sample_from_Q(q_states)
+        mu, _ = self.bottleneck(q_states, sampling=False)
+        return mu
 
     def compute_tokens(self, codes):
+
 
 
     def translate(self, x, latent=None, prior_states=None, refine_step=0):
