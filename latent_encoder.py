@@ -266,13 +266,13 @@ if OPTS.test or OPTS.all:
             # Compute codes
             codes = nmt.compute_codes(x)
             tokens = nmt.compute_tokens(codes, mask)
-            import pdb;pdb.set_trace()
             # Predict latent and target words from prior
-            target_tokens = targets.cpu().numpy()[0].tolist()
+            target_tokens = tokens.cpu().numpy()[0].tolist()
             # Convert token IDs back to words
             target_tokens = [t for t in target_tokens if t > 2]
             target_words = tgt_vocab.decode(target_tokens)
             target_sent = " ".join(target_words)
+            import pdb;pdb.set_trace()
             outf.write(target_sent + "\n")
             sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
             sys.stdout.flush()
