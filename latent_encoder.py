@@ -303,39 +303,6 @@ if OPTS.test or OPTS.all:
                     latent = nmt.latent2vector_nn(latent)
                     targets, _, _ = nmt.translate(x, latent=latent, prior_states=prior_states, refine_step=1)
                     target_tokens = targets.cpu().numpy()[0].tolist()
-                # if OPTS.interpretability and len(tokens) < 15 and i > 100:
-                #     # For the first test example
-                #     print(i, line)
-                #     if i == 104 and False:
-                #         # Interpolation experiment
-                #         s1 = "<s> recent topics on the recycling are introduced . </s>"
-                #         s2 = "<s> this paper introduces recent topics on recycling . </s>"
-                #         tgt1 = torch.tensor([tgt_vocab.encode(s1.split())])
-                #         tgt2 = torch.tensor([tgt_vocab.encode(s2.split())])
-                #         if torch.cuda.is_available():
-                #             tgt1 = tgt1.cuda()
-                #             tgt2 = tgt2.cuda()
-                #         z1, _ = nmt.compute_Q(x, tgt1)
-                #         z2, _ = nmt.compute_Q(x, tgt2)
-                #         for ratio in [0.2, 0.22, 0.24, 0.26, 0.28, 0.30, 0.32, 0.34, 0.36, 0.38, 0.4]:
-                #             z = z1 * ratio + z2 * (1 - ratio)
-                #             targets, _, _ = nmt.translate(x, latent=z, prior_states=prior_states,
-                #                                           refine_step=1)
-                #             output = " ".join(tgt_vocab.decode(targets[0].cpu().numpy().tolist()))
-                #             print("interpolation=", ratio, output)
-                #         raise SystemExit
-                #     base_prob = nmt.prior_prob_estimator(prior_states)
-                #     mean_latent = base_prob[:, :, :8]
-                #     print("<s> {} </s>".format(line.strip()).split()[8])
-                #     for _ in range(10):
-                #         sampled_latent = nmt.bottleneck.sample_any_dist(base_prob)
-                #         # mean_latent[0, 8:11] = sampled_latent[0, 8:11]
-                #         targets, _, _ = nmt.translate(x, latent=nmt.latent2vector_nn(sampled_latent),
-                #                                       prior_states=prior_states, refine_step=1)
-                #         new_tokens = tgt_vocab.decode(targets[0].cpu().numpy().tolist())
-                #         print(" ".join(new_tokens))
-                #     raise SystemExit
-                # Interative inference
                 for infer_step in range(OPTS.Trefine_steps):
                     # Sample latent from Q and draw a new target prediction
                     prev_target = tuple(target_tokens)
