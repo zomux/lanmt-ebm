@@ -185,59 +185,11 @@ class LatentEncodingNetwork(Transformer):
         mu, _ = self.bottleneck(q_states, sampling=False)
         return mu
 
-    def compute_tokens(self, codes):
-
-
-
-    def translate(self, x, latent=None, prior_states=None, refine_step=0):
-        """ Testing codes.
-        """
-        x_mask = self.to_float(torch.ne(x, 0))
-        # Compute p(z|x)
-        if prior_states is None:
-            prior_states = self.prior_encoder(x, x_mask)
-        # Sample latent variables from prior if it's not given
-        if latent is None:
-            if OPTS.zeroprior:
-                prior_prob = self.standard_gaussian_dist(x.shape[0], x.shape[1])
-            else:
-                prior_prob = self.prior_prob_estimator(prior_states)
-            if not OPTS.Tlatent_search:
-                if OPTS.denoise:
-                    z = prior_prob[:, :, :self.latent_dim]
-                    prior_prob = OPTS.denoise.refine(z, self.x_embed_layer(x), x_mask)
-                latent = self.deterministic_sample_from_prob(prior_prob)
-            else:
-                latent = self.bottleneck.sample_any_dist(prior_prob, samples=OPTS.Tcandidate_num, noise_level=0.5)
-                latent = self.latent2vector_nn(latent)
-        # Predict length
-        length_delta = self.predict_length(prior_states, latent, x_mask)
-        # Adjust the number of latent
-        converted_z, y_mask, y_lens = self.convert_length_with_delta(latent, x_mask, length_delta + 1)
-        if converted_z.size(1) == 0:
-            return None, latent, prior_prob.argmax(-1)
-        # Run decoder to predict the target words
-        decoder_states = self.decoder(converted_z, y_mask, prior_states, x_mask)
+    def compute_tokens(self, codes, mask):
+        code_vectors = self.latent2vector_nn(codes)
+        decoder_states = self.decoder(code_vectors, mask)
         logits = self.expander_nn(decoder_states)
-        # Get the target predictions
-        if OPTS.Tlatent_search and not OPTS.Tteacher_rescore:
-            # Latent search without teacher rescoring is dangeous
-            # because the generative model framework can't effeciently and correctly score hypotheses
-            if refine_step == OPTS.Trefine_steps:
-                # In the finally step, pick the best hypotheses
-                logprobs, preds = torch.log_softmax(logits, 2).max(2)
-                logprobs = (logprobs * y_mask).sum(1)  # x batch x 1
-                preds = preds * y_mask.long()
-                # after deterimistic refinement
-                pred = preds[logprobs.argmax()].unsqueeze(0)
-            else:
-                # Just return all candidates
-                pred = logits.argmax(-1)
-                pred = pred * y_mask.long()
-        else:
-            pred = logits.argmax(-1)
-
-        return pred, latent, prior_states
+        return logits
 
     def standard_gaussian_dist(self, batch_size, seq_size):
         shape = (batch_size, seq_size, self.latent_dim)
