@@ -241,19 +241,7 @@ if OPTS.test or OPTS.all:
     if not is_root_node():
         sys.exit()
     torch.manual_seed(OPTS.seed)
-    # Load the autoregressive model for rescoring if neccessary
-    if OPTS.Tteacher_rescore:
-        assert os.path.exists(pretrained_autoregressive_path)
-        load_rescoring_transformer(basic_options, pretrained_autoregressive_path)
-    # Load trained model
-    if OPTS.use_pretrain:
-        if OPTS.dtok not in PRETRAINED_MODEL_MAP:
-            print("The model for {} doesn't exist".format(OPTS.dtok))
-        model_path = PRETRAINED_MODEL_MAP[OPTS.dtok]
-        print("loading pretrained model in {}".format(model_path))
-        OPTS.result_path = OPTS.result_path.replace("lanmt_", "lanmt_pretrain_")
-    else:
-        model_path = OPTS.model_path
+    model_path = OPTS.model_path
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
@@ -261,26 +249,12 @@ if OPTS.test or OPTS.all:
     if torch.cuda.is_available():
         nmt.cuda()
     nmt.train(False)
-    if OPTS.scorenet:
-        scorenet = nmt
-        OPTS.scorenet = scorenet
-        scorenet.train(False)
-        nmt = scorenet.nmt()
-        nmt.train(False)
     src_vocab = Vocab(src_vocab_path)
     tgt_vocab = Vocab(tgt_vocab_path)
     result_path = OPTS.result_path
     # Read data
     lines = open(test_src_corpus).readlines()
-    latent_candidate_num = OPTS.Tcandidate_num if OPTS.Tlatent_search else None
     decode_times = []
-    if OPTS.profile:
-        lines = lines * 10
-    if OPTS.test_fix_length > 0:
-        lines = [l for l in lines if len(l.split()) == OPTS.test_fix_length]
-        if not lines:
-            raise SystemError
-        lines = [lines[0]] * 300
     trains_stop_stdout_monitor()
     with open(OPTS.result_path, "w") as outf:
         for i, line in enumerate(lines):
@@ -291,28 +265,20 @@ if OPTS.test or OPTS.all:
                 x = x.cuda()
             mask = torch.ne(x, 0)
             start_time = time.time()
-            with torch.no_grad() if not OPTS.scorenet else nullcontext():
-                # Predict latent and target words from prior
-                if not OPTS.scorenet:
-                    targets, _, prior_states = nmt.translate(x)
-                    target_tokens = targets.cpu().numpy()[0].tolist()
-                if OPTS.scorenet:
-                    prior_states = nmt.prior_encoder(x, mask)
-                    z = torch.zeros((1, x.shape[1], 8), requires_grad=True).cuda()
-                    latent = scorenet.refine(z, x, mask)
-                    latent = nmt.latent2vector_nn(latent)
-                    targets, _, _ = nmt.translate(x, latent=latent, prior_states=prior_states, refine_step=1)
-                    target_tokens = targets.cpu().numpy()[0].tolist()
-                for infer_step in range(OPTS.Trefine_steps):
-                    # Sample latent from Q and draw a new target prediction
-                    prev_target = tuple(target_tokens)
-                    new_latent, _ = nmt.compute_Q(x, targets)
-                    targets, _, _ = nmt.translate(x, latent=new_latent, prior_states=prior_states,
-                                                  refine_step=infer_step + 1)
-                    target_tokens = targets[0].cpu().numpy().tolist()
-                    # Early stopping
-                    if tuple(target_tokens) == tuple(prev_target):
-                        break
+            # Predict latent and target words from prior
+            if not OPTS.scorenet:
+                targets, _, prior_states = nmt.translate(x)
+                target_tokens = targets.cpu().numpy()[0].tolist()
+            for infer_step in range(OPTS.Trefine_steps):
+                # Sample latent from Q and draw a new target prediction
+                prev_target = tuple(target_tokens)
+                new_latent, _ = nmt.compute_Q(x, targets)
+                targets, _, _ = nmt.translate(x, latent=new_latent, prior_states=prior_states,
+                                              refine_step=infer_step + 1)
+                target_tokens = targets[0].cpu().numpy().tolist()
+                # Early stopping
+                if tuple(target_tokens) == tuple(prev_target):
+                    break
             if targets is None:
                 target_tokens = [2, 2, 2]
             elif OPTS.Tteacher_rescore:
