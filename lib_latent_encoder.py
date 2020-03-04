@@ -180,7 +180,17 @@ class LatentEncodingNetwork(Transformer):
         return score_map
 
     def compute_codes(self, seq):
+        # ----------- Compute prior and approximated posterior -------------#
+        # Compute p(z|x)
+        prior_prob = self.standard_gaussian_dist(seq.shape[0], seq.shape[1])
+        # Compute q(z|x,y) and sample z
+        q_states = self.compute_Q_states(seq, mask)
+        # Sample latent variables from q(z|x,y)
+        sampled_z, q_prob = self.sample_from_Q(q_states)
+
+    def compute_tokens(self, codes):
         
+
     def translate(self, x, latent=None, prior_states=None, refine_step=0):
         """ Testing codes.
         """
