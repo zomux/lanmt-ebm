@@ -70,6 +70,7 @@ ap.add_argument("--opt_latentdim", default=8, type=int, help="dimension of laten
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
 ap.add_argument("--opt_annealbudget", action="store_true", help="switch of annealing KL budget")
 ap.add_argument("--opt_fixbug1", action="store_true", help="fix bug in length converter")
+ap.add_argument("--opt_fixbug2", action="store_true", help="fix bug in transformer decoder")
 ap.add_argument("--opt_scorenet", action="store_true")
 ap.add_argument("--opt_denoise", action="store_true")
 ap.add_argument("--opt_finetune", action="store_true",
