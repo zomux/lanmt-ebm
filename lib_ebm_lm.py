@@ -109,8 +109,8 @@ class EnergyLanguageModel(Transformer):
         return {"loss": score_match_loss}
 
     def forward(self, x, y, sampling=False):
-        x_mask = self.to_float(torch.ne(x, 0))
-        score_map = self.compute_loss(x, x_mask)
+        mask = self.to_float(torch.ne(y, 0))
+        score_map = self.compute_loss(y, mask)
         return score_map
 
     def refine(self, z, x, mask=None, n_steps=50, step_size=0.001):
