@@ -21,7 +21,7 @@ from nmtlab.utils import OPTS
 
 class EnergyLanguageModel(Transformer):
 
-    def __init__(self, lanmt_model, hidden_size=512, latent_size=8):
+    def __init__(self, coder_model, hidden_size=512, latent_size=8):
         """
         Args:
             lanmt_model(LANMTModel)
@@ -30,6 +30,8 @@ class EnergyLanguageModel(Transformer):
         self._latent_size = latent_size
         self.set_stepwise_training(False)
         super(EnergyLanguageModel, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
+        self._coder_model = [coder_model]
+        self._coder_model[0].train(False)
         self.enable_valid_grad = True
 
     def prepare(self):
@@ -136,8 +138,8 @@ class EnergyLanguageModel(Transformer):
             raise SystemExit
         return z
 
-    def nmt(self):
-        return self._lanmt[0]
+    def coder(self):
+        return self._coder_model[0]
 
 if __name__ == '__main__':
     import sys
