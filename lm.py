@@ -75,9 +75,6 @@ ap.add_argument("--opt_finetune", action="store_true",
                 help="finetune the model without limiting KL with a budget")
 
 # Options only for inference
-ap.add_argument("--opt_Trefine_steps", type=int, default=0, help="steps of running iterative refinement")
-ap.add_argument("--opt_Tlatent_search", action="store_true", help="whether to search over multiple latents")
-ap.add_argument("--opt_Tteacher_rescore", action="store_true", help="whether to use teacher rescoring")
 ap.add_argument("--opt_Tcandidate_num", default=50, type=int, help="number of latent candidate for latent search")
 ap.add_argument("--opt_Tbatch_size", default=8000, type=int, help="batch size for batch translate")
 
@@ -192,7 +189,9 @@ lanmt_options.update(dict(
 ))
 
 vae = LatentEncodingNetwork(**lanmt_options)
-vae_path = ""
+vae_path = "{}/data/wmt14_ende_fair/lacoder_batchtokens-8192_distill_dtok-wmt14_fair_ende_klbudget-15.0_latentdim-{}_longertrain.pt".format(os.getenv("HOME"), OPTS.latentdim)
+assert os.path.exists(vae_path)
+vae.load(vae_path)
 
 nmt = EnergyLanguageModel(vae, latent_size=OPTS.latentdim)
 
