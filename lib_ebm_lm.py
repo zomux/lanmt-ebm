@@ -68,7 +68,6 @@ class EnergyLanguageModel(Transformer):
             true_logp = self.coder().compute_tokens(true_z, mask, return_logp=True)
             noised_logp = self.coder().compute_tokens(noised_z, mask, return_logp=True)
         # Compute energy scores
-        import pdb;pdb.set_trace()
         energy, energy_grad = self.compute_energy(noised_z, mask)
         # Compute loss
         score_match_loss = (((energy_grad * (true_logp - noised_z) * x_mask[:, :, None]).sum(2).sum(1) - (true_logp - noised_logp))**2).mean()
