@@ -60,7 +60,7 @@ class EnergyLanguageModel(Transformer):
         with torch.no_grad():
             true_z = self.coder().compute_codes(seq).detach()
         # Compute delta inference
-        noise = torch.randn_like(refined_z)
+        noise = torch.randn_like(true_z)
         noised_z = true_z + noise
         noised_z.requires_grad_(True)
         # Compute logp for both refined z and noised z
@@ -113,7 +113,7 @@ class EnergyLanguageModel(Transformer):
 if __name__ == '__main__':
     import sys
     sys.path.append(".")
-    coder = LatentEncodingNetwork(src_vocab_size=1, tgt_vocab_size=1)
+    coder = LatentEncodingNetwork(src_vocab_size=1000, tgt_vocab_size=1000)
     # Testing
     lm = EnergyLanguageModel(coder, latent_size=256)
     x = torch.tensor([[1,2,3,4,5]])
