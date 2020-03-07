@@ -62,16 +62,16 @@ class EnergyLanguageModel(Transformer):
             true_z = self.coder().compute_codes(seq).detach()
         # Compute delta inference
         noise = torch.randn_like(refined_z)
-        noised_z = refined_z + noise
+        noised_z = true_z + noise
         noised_z.requires_grad_(True)
         # Compute logp for both refined z and noised z
         with torch.no_grad():
             true_logp = self.coder().compute_tokens(true_z, mask, return_logp=True)
-            noised_logp = self.compute_logits(noised_z, prior_states, x_mask, return_logp=True)
+            noised_logp = self.coder().compute_tokens(noised_z, mask, return_logp=True)
         # Compute energy scores
         energy, energy_grad = self.compute_energy(noised_z, x, x_mask)
         # Compute loss
-        score_match_loss = (((energy_grad * (refined_z - noised_z) * x_mask[:, :, None]).sum(2).sum(1) - (refined_logp - noised_logp))**2).mean()
+        score_match_loss = (((energy_grad * (true_logp - noised_z) * x_mask[:, :, None]).sum(2).sum(1) - (true_logp - noised_logp))**2).mean()
         # score_match_loss = ((noise - energy_grad)**2).sum(2)
         # score_match_loss = ((score_match_loss * x_mask).sum(1) / x_mask.sum(1)).mean()
         return {"loss": score_match_loss}
