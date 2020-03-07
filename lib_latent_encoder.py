@@ -195,7 +195,8 @@ class LatentEncodingNetwork(Transformer):
         else:
             import pdb;pdb.set_trace()
             d1, d2, _ = logits.shape
-            logps = F.cross_entropy(logits, tokens)
+            logps = F.cross_entropy(logits.view(d1*d2, -1), tokens.flatten(), reduction="none")
+
             return logps
 
     def standard_gaussian_dist(self, batch_size, seq_size):
