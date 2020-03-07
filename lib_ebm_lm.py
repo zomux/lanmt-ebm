@@ -22,7 +22,7 @@ from nmtlab.utils import OPTS
 
 class EnergyLanguageModel(Transformer):
 
-    def __init__(self, coder_model, hidden_size=512, latent_size=8):
+    def __init__(self, coder_model, hidden_size=512, latent_size=None):
         """
         Args:
             lanmt_model(LANMTModel)
@@ -89,7 +89,10 @@ class EnergyLanguageModel(Transformer):
 
     def compute_loss(self, seq, mask):
         # Compute cross-entropy loss and it's gradient
-        z = self.coder().compute_codes(seq)
+        with torch.no_grad():
+            z = self.coder().compute_codes(seq)
+        z.requires_grad_(True)
+        z_vectors =
         # Compute delta inference
         refined_z, prior_states = self.compute_delta_inference(x, x_mask, base_latent)
         refined_z = refined_z.detach()
