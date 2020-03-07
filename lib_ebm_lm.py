@@ -107,6 +107,7 @@ class EnergyLanguageModel(Transformer):
 
     def coder(self):
         coder = self._coder_model[0]
+        import pdb;pdb.set_trace()
         assert isinstance(coder, LatentEncodingNetwork)
         return coder
 
