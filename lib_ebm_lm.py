@@ -139,8 +139,9 @@ class EnergyLanguageModel(Transformer):
         return z
 
     def coder(self):
-
-        return self._coder_model[0]
+        coder = self._coder_model[0]
+        assert isinstance(coder, LatentEncodingNetwork)
+        return coder
 
 if __name__ == '__main__':
     import sys
