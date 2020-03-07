@@ -70,7 +70,7 @@ class EnergyLanguageModel(Transformer):
         # Compute energy scores
         energy, energy_grad = self.compute_energy(noised_z, mask)
         # Compute loss
-        score_match_loss = (((energy_grad * (true_logp - noised_logp) * x_mask[:, :, None]).sum(2).sum(1) - (true_logp - noised_logp))**2).mean()
+        score_match_loss = (((energy_grad * (true_z - noised_z) * mask[:, :, None]).sum(2).sum(1) - (true_logp - noised_logp))**2).mean()
         # score_match_loss = ((noise - energy_grad)**2).sum(2)
         # score_match_loss = ((score_match_loss * x_mask).sum(1) / x_mask.sum(1)).mean()
         return {"loss": score_match_loss}
