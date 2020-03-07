@@ -69,7 +69,6 @@ ap.add_argument("--opt_x3longertrain", action="store_true")
 ap.add_argument("--opt_latentdim", default=8, type=int, help="dimension of latent variables")
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
 ap.add_argument("--opt_fixbug1", action="store_true", help="fix bug in length converter")
-ap.add_argument("--opt_scorenet", action="store_true")
 ap.add_argument("--opt_denoise", action="store_true")
 ap.add_argument("--opt_finetune", action="store_true",
                 help="finetune the model without limiting KL with a budget")
@@ -199,18 +198,10 @@ nmt = EnergyLanguageModel(vae, latent_size=OPTS.latentdim)
 # Training
 if OPTS.train or OPTS.all:
     # Training code
-    if OPTS.finetune and not OPTS.scorenet:
-        n_valid_per_epoch = 20
-        scheduler = SimpleScheduler(max_epoch=1)
-    elif OPTS.scorenet:
-        n_valid_per_epoch = 10
-        scheduler = SimpleScheduler(max_epoch=20)
-    else:
-        scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
-    if OPTS.scorenet and False:
-        optimizer = optim.SGD(nmt.parameters(), lr=0.001)
-    else:
-        optimizer = optim.Adam(nmt.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-4)
+    scheduler = SimpleScheduler(max_epoch=20)
+    # scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
+    optimizer = optim.Adam(nmt.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-4)
+
     trainer = MTTrainer(
         nmt, dataset, optimizer,
         scheduler=scheduler, multigpu=gpu_num > 1,
@@ -223,15 +214,6 @@ if OPTS.train or OPTS.all:
         tensorboard_logdir=tb_logdir,
         # clip_norm=0.1 if OPTS.scorenet else 0
     )
-    # if OPTS.fp16:
-    #     from apex import amp
-    #     model, optimizer = amp.initialize(nmt, optimizer, opt_level="O3")
-    if OPTS.finetune and not OPTS.scorenet:
-        pretrain_path = OPTS.model_path.replace("_finetune", "")
-        if is_root_node():
-            print("loading model:", pretrain_path)
-        assert os.path.exists(pretrain_path)
-        nmt.load(pretrain_path)
     if OPTS.resume:
         trainer.load()
     trains_stop_stdout_monitor()
