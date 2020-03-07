@@ -194,6 +194,7 @@ class LatentEncodingNetwork(Transformer):
             return tokens
         else:
             import pdb;pdb.set_trace()
+            d1, d2, _ = logits.shape
             logps = F.cross_entropy(logits, tokens)
             return logps
 
