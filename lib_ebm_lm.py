@@ -45,10 +45,10 @@ class EnergyLanguageModel(Transformer):
             nn.Linear(self._hidden_size // 2, 1)
         )
 
-    def compute_energy(self, latent, x, mask):
+    def compute_energy(self, z, mask):
         if mask is not None:
             mask = mask.float()
-        h = self._latent2hidden(latent)
+        h = self._latent2hidden(z)
         x_embeds = self.nmt().x_embed_layer(x)
         h = self._encoder(h + x_embeds, mask=mask)
         energy = self._hidden2energy(h)
@@ -69,7 +69,7 @@ class EnergyLanguageModel(Transformer):
             true_logp = self.coder().compute_tokens(true_z, mask, return_logp=True)
             noised_logp = self.coder().compute_tokens(noised_z, mask, return_logp=True)
         # Compute energy scores
-        energy, energy_grad = self.compute_energy(noised_z, x, x_mask)
+        energy, energy_grad = self.compute_energy(noised_z, mask)
         # Compute loss
         score_match_loss = (((energy_grad * (true_logp - noised_z) * x_mask[:, :, None]).sum(2).sum(1) - (true_logp - noised_logp))**2).mean()
         # score_match_loss = ((noise - energy_grad)**2).sum(2)
