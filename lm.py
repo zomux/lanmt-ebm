@@ -192,6 +192,8 @@ vae = LatentEncodingNetwork(**lanmt_options)
 vae_path = "{}/data/wmt14_ende_fair/lacoder_batchtokens-8192_distill_dtok-wmt14_fair_ende_klbudget-15.0_latentdim-{}_longertrain.pt".format(os.getenv("HOME"), OPTS.latentdim)
 assert os.path.exists(vae_path)
 vae.load(vae_path)
+if torch.cuda.is_available():
+    vae.cuda()
 
 nmt = EnergyLanguageModel(vae, latent_size=OPTS.latentdim)
 
