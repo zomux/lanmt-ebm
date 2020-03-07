@@ -86,7 +86,7 @@ class EnergyLanguageModel(Transformer):
             sampled_z, _ = lanmt.bottleneck(q_states, sampling=False)
             return sampled_z, prior_states
 
-    def compute_loss(self, x, x_mask):
+    def compute_loss(self, seq, mask):
         # Compute cross-entropy loss and it's gradient
         base_latent = x.new_zeros((x.shape[0], x.shape[1], self._latent_size), requires_grad=True, dtype=torch.float)
         base_latent = torch.randn_like(base_latent) + base_latent
