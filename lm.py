@@ -192,7 +192,7 @@ lanmt_options.update(dict(
 ))
 
 vae = LatentEncodingNetwork(**lanmt_options)
-bae
+vae_path = ""
 
 nmt = EnergyLanguageModel(vae, latent_size=OPTS.latentdim)
 
