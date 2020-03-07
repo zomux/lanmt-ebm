@@ -90,7 +90,8 @@ ap.add_argument("--result_path",
                 default="{}/lm.result".format(DATA_ROOT))
 OPTS.parse(ap)
 
-
+OPTS.fix_bug1 = True
+OPTS.fix_bug2 = False
 OPTS.model_path = OPTS.model_path.replace(DATA_ROOT, OPTS.root)
 OPTS.result_path = OPTS.result_path.replace(DATA_ROOT, OPTS.root)
 
