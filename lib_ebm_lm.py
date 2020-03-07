@@ -89,7 +89,7 @@ class EnergyLanguageModel(Transformer):
 
     def compute_loss(self, seq, mask):
         # Compute cross-entropy loss and it's gradient
-        z = self.coder().encode()
+        z = self.coder().compute_codes(seq)
         # Compute delta inference
         refined_z, prior_states = self.compute_delta_inference(x, x_mask, base_latent)
         refined_z = refined_z.detach()
