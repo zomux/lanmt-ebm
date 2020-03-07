@@ -28,7 +28,7 @@ class EnergyLanguageModel(Transformer):
             lanmt_model(LANMTModel)
         """
         self._hidden_size = hidden_size
-        self._latent_size = latent_size
+        self._latent_size = latent_size if latent_size is not None else OPTS.latentdim
         self.set_stepwise_training(False)
         super(EnergyLanguageModel, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         self._coder_model = [coder_model]
@@ -92,10 +92,7 @@ class EnergyLanguageModel(Transformer):
         with torch.no_grad():
             z = self.coder().compute_codes(seq)
         z.requires_grad_(True)
-        z_vectors =
         # Compute delta inference
-        refined_z, prior_states = self.compute_delta_inference(x, x_mask, base_latent)
-        refined_z = refined_z.detach()
         noise = torch.randn_like(refined_z)
         noised_z = refined_z + noise
         noised_z.requires_grad_(True)
