@@ -15,6 +15,7 @@ sys.path.append(".")
 from lanmt.lib_lanmt_modules import TransformerEncoder
 from lanmt.lib_lanmt_model import LANMTModel
 from lanmt.lib_simple_encoders import ConvolutionalEncoder
+from lanmt.lib_latent_encoder import LatentEncodingNetwork
 from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
 
@@ -88,8 +89,7 @@ class EnergyLanguageModel(Transformer):
 
     def compute_loss(self, seq, mask):
         # Compute cross-entropy loss and it's gradient
-        base_latent = x.new_zeros((x.shape[0], x.shape[1], self._latent_size), requires_grad=True, dtype=torch.float)
-        base_latent = torch.randn_like(base_latent) + base_latent
+        z = self.
         # Compute delta inference
         refined_z, prior_states = self.compute_delta_inference(x, x_mask, base_latent)
         refined_z = refined_z.detach()
@@ -139,6 +139,7 @@ class EnergyLanguageModel(Transformer):
         return z
 
     def coder(self):
+
         return self._coder_model[0]
 
 if __name__ == '__main__':
