@@ -49,11 +49,10 @@ class EnergyLanguageModel(Transformer):
         if mask is not None:
             mask = mask.float()
         h = self._latent2hidden(z)
-        x_embeds = self.nmt().x_embed_layer(x)
-        h = self._encoder(h + x_embeds, mask=mask)
+        h = self._encoder(h, mask=mask)
         energy = self._hidden2energy(h)
         mean_energy = ((energy.squeeze(2) * mask).sum(1) / mask.sum(1)).mean()
-        grad = torch.autograd.grad(mean_energy, latent, create_graph=True)[0]
+        grad = torch.autograd.grad(mean_energy, z, create_graph=True)[0]
         return energy, grad
 
     def compute_loss(self, seq, mask):
