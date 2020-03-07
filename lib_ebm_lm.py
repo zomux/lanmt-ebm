@@ -90,8 +90,7 @@ class EnergyLanguageModel(Transformer):
     def compute_loss(self, seq, mask):
         # Compute cross-entropy loss and it's gradient
         with torch.no_grad():
-            z = self.coder().compute_codes(seq)
-        z.requires_grad_(True)
+            true_z = self.coder().compute_codes(seq).detach()
         # Compute delta inference
         noise = torch.randn_like(refined_z)
         noised_z = refined_z + noise
