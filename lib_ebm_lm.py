@@ -75,18 +75,6 @@ class EnergyLanguageModel(Transformer):
             logp = None
         return logits, y_mask, logp
 
-    def compute_delta_inference(self, x, x_mask, latent, prior_states=None):
-        with torch.no_grad():
-            lanmt = self.nmt()
-            if prior_states is None:
-                prior_states = lanmt.prior_encoder(x, x_mask)
-            latent_vec = lanmt.latent2vector_nn(latent)
-            logits, y_mask, _ = self.compute_logits(latent_vec, prior_states, x_mask, return_logp=False)
-            y = logits.argmax(-1)
-            q_states = lanmt.compute_Q_states(lanmt.x_embed_layer(x), x_mask, y, y_mask)
-            sampled_z, _ = lanmt.bottleneck(q_states, sampling=False)
-            return sampled_z, prior_states
-
     def compute_loss(self, seq, mask):
         # Compute cross-entropy loss and it's gradient
         with torch.no_grad():
