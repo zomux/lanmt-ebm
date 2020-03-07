@@ -185,11 +185,16 @@ class LatentEncodingNetwork(Transformer):
         mu, _ = self.bottleneck(q_states, sampling=False)
         return mu
 
-    def compute_tokens(self, codes, mask):
+    def compute_tokens(self, codes, mask, return_logp=False):
         code_vectors = self.latent2vector_nn(codes)
         decoder_states = self.decoder(code_vectors, mask)
         logits = self.expander_nn(decoder_states)
-        return logits.argmax(-1)
+        tokens = logits.argmax(-1)
+        if not return_logp:
+            return tokens
+        else:
+            import pdb;pdb.set_trace()
+            logps = F.cross_entropy(logits, tokens)
 
     def standard_gaussian_dist(self, batch_size, seq_size):
         shape = (batch_size, seq_size, self.latent_dim)
