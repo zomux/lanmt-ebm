@@ -191,7 +191,9 @@ lanmt_options.update(dict(
     max_train_steps=training_maxsteps,
 ))
 
-nmt = EnergyLanguageModel(**lanmt_options)
+vae = LatentEncodingNetwork(**lanmt_options)
+
+nmt = EnergyLanguageModel(latent_size=OPTS.latentdim)
 
 
 # Training
