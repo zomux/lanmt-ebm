@@ -28,7 +28,7 @@ from argparse import ArgumentParser
 from contextlib import nullcontext
 
 from lib_lanmt_model import LANMTModel
-from lib_latent_encoder import LatentEncodingNetwork
+from lanmt.lib_latent_encoder import LatentEncodingNetwork
 from lib_ebm_lm import EnergyLanguageModel
 from lib_rescoring import load_rescoring_transformer
 from datasets import get_dataset_paths
