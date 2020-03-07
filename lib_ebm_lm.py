@@ -56,25 +56,6 @@ class EnergyLanguageModel(Transformer):
         grad = torch.autograd.grad(mean_energy, latent, create_graph=True)[0]
         return energy, grad
 
-    def compute_logits(self, latent_vec, prior_states, x_mask, return_logp=False):
-        lanmt = self.nmt()
-        # lacking length prediction and p(z|x)
-        if latent_vec.shape[-1] < self._hidden_size:
-            latent_vec = lanmt.latent2vector_nn(latent_vec)
-        length_delta = lanmt.predict_length(prior_states, latent_vec, x_mask)
-        converted_z, y_mask, y_lens = lanmt.convert_length_with_delta(latent_vec, x_mask, length_delta + 1)
-        decoder_states = lanmt.decoder(converted_z, y_mask, prior_states, x_mask)
-        logits = lanmt.expander_nn(decoder_states)
-        if return_logp:
-            shape = logits.shape
-            y = logits.argmax(-1)
-            nll = F.cross_entropy(logits.view(shape[0] * shape[1], -1), y.view(shape[0] * shape[1]), reduction="none")
-            nll = nll.view(shape[0], shape[1])
-            logp = (nll * y_mask).sum(1)
-        else:
-            logp = None
-        return logits, y_mask, logp
-
     def compute_loss(self, seq, mask):
         # Compute cross-entropy loss and it's gradient
         with torch.no_grad():
@@ -85,7 +66,7 @@ class EnergyLanguageModel(Transformer):
         noised_z.requires_grad_(True)
         # Compute logp for both refined z and noised z
         with torch.no_grad():
-            true_logp = self.compute_logits(refined_z, prior_states, x_mask, return_logp=True)
+            true_logp = self.coder().compute_tokens(true_z, mask, return_logp=True)
             noised_logp = self.compute_logits(noised_z, prior_states, x_mask, return_logp=True)
         # Compute energy scores
         energy, energy_grad = self.compute_energy(noised_z, x, x_mask)
