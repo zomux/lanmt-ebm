@@ -114,14 +114,14 @@ class EnergyLanguageModel(Transformer):
 if __name__ == '__main__':
     import sys
     sys.path.append(".")
-    coder = LatentEncodingNetwork(src_vocab_size=1000, tgt_vocab_size=1000)
+    coder = LatentEncodingNetwork(latent_dim=256, src_vocab_size=1000, tgt_vocab_size=1000)
     # Testing
     lm = EnergyLanguageModel(coder, latent_size=256)
     x = torch.tensor([[1,2,3,4,5]])
     y = torch.tensor([[1,2,3]])
     if torch.cuda.is_available():
         coder.cuda()
-        coder.cuda()
+        lm.cuda()
         x = x.cuda()
         y = y.cuda()
     lm(x, y)
