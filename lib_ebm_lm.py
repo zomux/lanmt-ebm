@@ -64,9 +64,9 @@ class EnergyLanguageModel(Transformer):
         noised_z = true_z + noise
         noised_z.requires_grad_(True)
         # Compute logp for both refined z and noised z
-        with torch.no_grad():
-            true_logp = self.coder().compute_tokens(true_z, mask, return_logp=True)
-            noised_logp = self.coder().compute_tokens(noised_z, mask, return_logp=True)
+        # with torch.no_grad():
+        #     true_logp = self.coder().compute_tokens(true_z, mask, return_logp=True)
+        #     noised_logp = self.coder().compute_tokens(noised_z, mask, return_logp=True)
         # Compute energy scores
         energy, energy_grad = self.compute_energy(noised_z, mask)
         # Compute loss
