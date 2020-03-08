@@ -64,6 +64,9 @@ ap.add_argument("--opt_shard", type=int, default=32)
 ap.add_argument("--opt_longertrain", action="store_true")
 ap.add_argument("--opt_x3longertrain", action="store_true")
 
+# Options for latent encoder
+ap.add_argument("--opt_disentangle", action="store_true")
+
 # Options for LANMT
 ap.add_argument("--opt_latentdim", default=8, type=int, help="dimension of latent variables")
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
