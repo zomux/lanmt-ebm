@@ -13,7 +13,7 @@ import sys
 sys.path.append(".")
 
 from nmtlab.modules.transformer_modules import TransformerEmbedding, LabelSmoothingKLDivLoss
-from lanmt.lib_simple_encoders import ConvolutionalEncoder
+from lanmt.lib_simple_encoders import ConvolutionalEncoder, DisentangledEncoder
 from lanmt.lib_vae import VAEBottleneck
 from nmtlab.models import Transformer
 from nmtlab.utils import OPTS, TensorMap
