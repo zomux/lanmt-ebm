@@ -85,11 +85,9 @@ class EnergyLanguageModel(Transformer):
             mask = mask.float()
         z.requires_grad_(True)
         for _ in range(n_steps):
-            import pdb;pdb.set_trace()
             energy, grad = self.compute_energy(z, mask)
             if not OPTS.evaluate:
-                print((z - refined_z).norm(2).detach().cpu().numpy(),
-                      energy.mean().detach().cpu().numpy(),
+                print(energy.mean().detach().cpu().numpy(),
                       grad.norm(2).detach().cpu().numpy())
             z = z + step_size * grad
             # noise = torch.randn_like(z) * np.sqrt(step_size * 2)
