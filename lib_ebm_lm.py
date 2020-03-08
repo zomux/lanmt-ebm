@@ -80,7 +80,7 @@ class EnergyLanguageModel(Transformer):
         score_map = self.compute_loss(y, mask)
         return score_map
 
-    def refine(self, z, mask=None, n_steps=50, step_size=0.001):
+    def refine(self, z, mask=None, n_steps=50, step_size=0.001, return_tokens=False):
         if mask is not None:
             mask = mask.float()
         z.requires_grad_(True)
@@ -98,6 +98,7 @@ class EnergyLanguageModel(Transformer):
             #     break
             # z[torch.arange(z.shape[0]), max_pos] += step_size * grad[torch.arange(z.shape[0]), max_pos]
             # print(grad.norm(dim=2))
+        tokens = self.coder().compute_tokens(z, mask)
         if not OPTS.evaluate:
             raise SystemExit
         return z
