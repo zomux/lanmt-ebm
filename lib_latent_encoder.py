@@ -46,10 +46,14 @@ class LatentEncodingNetwork(Transformer):
         # Embedding layers
         self.embed_layer = TransformerEmbedding(self._src_vocab_size, self.embed_size)
         # Prior p(z|x)
-        # Approximator q(z|x)
-        self.q_encoder = ConvolutionalEncoder(self.embed_layer, self.hidden_size, self.q_layers)
-        # Decoder p(x|z)
-        self.decoder = ConvolutionalEncoder(None, self.hidden_size, self.decoder_layers, skip_connect=True)
+        if not OPTS.disentangle:
+            # Approximator q(z|x)
+            self.q_encoder = ConvolutionalEncoder(self.embed_layer, self.hidden_size, self.q_layers)
+            # Decoder p(x|z)
+            self.decoder = ConvolutionalEncoder(None, self.hidden_size, self.decoder_layers, skip_connect=True)
+        else:
+            self.q_encoder = DisentangledEncoder(self.embed_layer, self.hidden_size, self.q_layers)
+            self.decoder = DisentangledEncoder(None, self.hidden_size, self.decoder_layers, skip_connect=True)
         # Bottleneck
         self.bottleneck = VAEBottleneck(self.hidden_size, z_size=self.latent_dim, standard_var=True)
         self.latent2vector_nn = nn.Linear(self.latent_dim, self.hidden_size)
