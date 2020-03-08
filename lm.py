@@ -242,11 +242,11 @@ if OPTS.test or OPTS.all:
     # Testing for langauge model
     lines = open(test_tgt_corpus).readlines()
     first_line = lines[0]
-    first_line = "Gut@@ ach : ach ach Sicherheit für Fußgän@@ ger"
+    first_line = "Gut@@ ach : Noch ach Sicherheit für Fußgän@@ ger"
     print(first_line)
     first_line_tokens = tgt_vocab.encode("<s> {} </s>".format(first_line.strip()).split())
     z = vae.compute_codes(torch.tensor([first_line_tokens]))
-    # z = torch.zeros((1, 6, OPTS.latentdim))
+    z = torch.zeros((1, 6, OPTS.latentdim))
     mask = torch.ones((1, z.shape[1]))
     if torch.cuda.is_available():
         mask = mask.cuda()
