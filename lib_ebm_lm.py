@@ -84,6 +84,7 @@ class EnergyLanguageModel(Transformer):
         if mask is not None:
             mask = mask.float()
         for _ in range(n_steps):
+            import pdb;pdb.set_trace()
             energy, grad = self.compute_energy(z, x, mask)
             if not OPTS.evaluate:
                 print((z - refined_z).norm(2).detach().cpu().numpy(),

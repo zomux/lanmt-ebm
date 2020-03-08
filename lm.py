@@ -292,7 +292,10 @@ if OPTS.batch_test:
     nmt.train(False)
 
     # LM Testing
-
+    z = torch.zeros(1, 5, OPTS.latentdim)
+    if torch.cuda.is_available():
+        z = z.cuda()
+    nmt.refine(z, z * 0.)
     raise SystemExit
 
 
