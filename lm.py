@@ -240,8 +240,8 @@ if OPTS.test or OPTS.all:
     tgt_vocab = Vocab(tgt_vocab_path)
 
     # Testing for langauge model
-    z = torch.zeros((1, 5, OPTS.latentdim))
-    mask = torch.ones((1, 5))
+    z = torch.zeros((1, 6, OPTS.latentdim))
+    mask = torch.ones((1, 6))
     if torch.cuda.is_available():
         mask = mask.cuda()
         z = z.cuda()
