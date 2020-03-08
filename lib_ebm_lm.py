@@ -80,12 +80,9 @@ class EnergyLanguageModel(Transformer):
         score_map = self.compute_loss(y, mask)
         return score_map
 
-    def refine(self, z, mask=None, n_steps=50, step_size=0.001):
+    def refine(self, z=None, mask=None, n_steps=50, step_size=0.001):
         if mask is not None:
             mask = mask.float()
-        if not OPTS.evaluate:
-            with torch.no_grad():
-                refined_z, _ = self.compute_delta_inference(x, mask, z)
         for _ in range(n_steps):
             energy, grad = self.compute_energy(z, x, mask)
             if not OPTS.evaluate:
