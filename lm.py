@@ -323,6 +323,7 @@ if OPTS.batch_test:
             x = x.cuda()
         with torch.no_grad():
             # Predict latent and target words from prior
+
             targets, _, prior_states = nmt.translate(x)
             # Interative inference
             for infer_step in range(OPTS.Trefine_steps):
