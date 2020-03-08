@@ -240,7 +240,9 @@ if OPTS.test or OPTS.all:
     tgt_vocab = Vocab(tgt_vocab_path)
 
     # Testing for langauge model
-
+    z = torch.zeros((1, 5, OPTS.latentdim))
+    nmt.refine(z, z * 0)
+    raise SystemExit
 
 
     result_path = OPTS.result_path
