@@ -245,7 +245,8 @@ if OPTS.test or OPTS.all:
     if torch.cuda.is_available():
         mask = mask.cuda()
         z = z.cuda()
-    nmt.refine(z, mask)
+    tokens = nmt.refine(z, mask, return_tokens=True)
+    import pdb;pdb.set_trace()
     raise SystemExit
 
 

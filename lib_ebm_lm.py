@@ -99,9 +99,10 @@ class EnergyLanguageModel(Transformer):
             # z[torch.arange(z.shape[0]), max_pos] += step_size * grad[torch.arange(z.shape[0]), max_pos]
             # print(grad.norm(dim=2))
         tokens = self.coder().compute_tokens(z, mask)
-        if not OPTS.evaluate:
-            raise SystemExit
-        return z
+        if return_tokens:
+            return tokens
+        else:
+            return z
 
     def coder(self):
         coder = self._coder_model[0]
