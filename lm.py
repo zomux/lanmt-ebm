@@ -295,7 +295,7 @@ if OPTS.batch_test:
     result_path = OPTS.result_path
     # Read data
     batch_test_size = OPTS.Tbatch_size
-    lines = open(test_src_corpus).readlines()
+    lines = open(test_tgt_corpus).readlines()
     sorted_line_ids = np.argsort([len(l.split()) for l in lines])
     start_time = time.time()
     output_tokens = []
