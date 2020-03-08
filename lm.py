@@ -290,6 +290,12 @@ if OPTS.batch_test:
     if torch.cuda.is_available():
         nmt.cuda()
     nmt.train(False)
+
+    # LM Testing
+
+    raise SystemExit
+
+
     src_vocab = Vocab(src_vocab_path)
     tgt_vocab = Vocab(tgt_vocab_path)
     result_path = OPTS.result_path
