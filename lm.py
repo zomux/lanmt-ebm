@@ -238,6 +238,11 @@ if OPTS.test or OPTS.all:
     nmt.train(False)
     src_vocab = Vocab(src_vocab_path)
     tgt_vocab = Vocab(tgt_vocab_path)
+
+    # Testing for langauge model
+
+
+
     result_path = OPTS.result_path
     # Read data
     lines = open(test_tgt_corpus).readlines()
