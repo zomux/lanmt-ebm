@@ -80,7 +80,7 @@ class EnergyLanguageModel(Transformer):
         score_map = self.compute_loss(y, mask)
         return score_map
 
-    def refine(self, z, mask=None, n_steps=50, step_size=0.001, return_tokens=False):
+    def refine(self, z, mask=None, n_steps=1000, step_size=0.001, return_tokens=False):
         if mask is not None:
             mask = mask.float()
         z.requires_grad_(True)
@@ -89,17 +89,17 @@ class EnergyLanguageModel(Transformer):
             if not OPTS.evaluate:
                 print(energy.mean().detach().cpu().numpy(),
                       grad.norm(2).detach().cpu().numpy())
-            # z = z - step_size * grad
+            z = z - step_size * grad
             # noise = torch.randn_like(z) * np.sqrt(step_size * 2)
             # z = z + step_size * grad + noise
-            norm = grad.norm(dim=2)
-            max_pos = norm.argmax(1)
+            # norm = grad.norm(dim=2)
+            # max_pos = norm.argmax(1)
             # if norm.max() < 0.5:
             #     break
-            z.requires_grad_(False)
-            z[torch.arange(z.shape[0]), max_pos] -= step_size * grad[torch.arange(z.shape[0]), max_pos]
-            z = z.detach()
-            z.requires_grad_(True)
+            # z.requires_grad_(False)
+            # z[torch.arange(z.shape[0]), max_pos] -= step_size * grad[torch.arange(z.shape[0]), max_pos]
+            # z = z.detach()
+            # z.requires_grad_(True)
             # print(grad.norm(dim=2))
         tokens = self.coder().compute_tokens(z, mask)
         if return_tokens:
