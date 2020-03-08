@@ -241,9 +241,11 @@ if OPTS.test or OPTS.all:
 
     # Testing for langauge model
     z = torch.zeros((1, 5, OPTS.latentdim))
+    mask = torch.ones((1, 5))
     if torch.cuda.is_available():
+        mask = mask.cuda()
         z = z.cuda()
-    nmt.refine(z, z * 0. + 1.)
+    nmt.refine(z, mask)
     raise SystemExit
 
 

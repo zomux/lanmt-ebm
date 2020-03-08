@@ -80,9 +80,10 @@ class EnergyLanguageModel(Transformer):
         score_map = self.compute_loss(y, mask)
         return score_map
 
-    def refine(self, z=None, mask=None, n_steps=50, step_size=0.001):
+    def refine(self, z, mask=None, n_steps=50, step_size=0.001):
         if mask is not None:
             mask = mask.float()
+        z.requires_grad_(True)
         for _ in range(n_steps):
             import pdb;pdb.set_trace()
             energy, grad = self.compute_energy(z, mask)
