@@ -316,7 +316,7 @@ if OPTS.batch_test:
                 break
         x = np.zeros((len(batch_lines), max_len + 2), dtype="long")
         for j, line in enumerate(batch_lines):
-            tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
+            tokens = tgt_vocab.encode("<s> {} </s>".format(line.strip()).split())
             x[j, :len(tokens)] = tokens
         x = torch.tensor(x)
         if torch.cuda.is_available():
