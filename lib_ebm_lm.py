@@ -96,7 +96,10 @@ class EnergyLanguageModel(Transformer):
             max_pos = norm.argmax(1)
             # if norm.max() < 0.5:
             #     break
+            z.requires_grad_(False)
             z[torch.arange(z.shape[0]), max_pos] -= step_size * grad[torch.arange(z.shape[0]), max_pos]
+            z = z.detach()
+            z.requires_grad_(True)
             # print(grad.norm(dim=2))
         tokens = self.coder().compute_tokens(z, mask)
         if return_tokens:
