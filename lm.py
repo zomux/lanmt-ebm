@@ -251,7 +251,7 @@ if OPTS.test or OPTS.all:
         z = z.cuda()
     tokens = nmt.refine(z, mask, return_tokens=True)
     line = tgt_vocab.decode(tokens[0])
-    print(line)
+    print(" ".join(line))
     raise SystemExit
 
 
