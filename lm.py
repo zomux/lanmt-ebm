@@ -246,7 +246,8 @@ if OPTS.test or OPTS.all:
         mask = mask.cuda()
         z = z.cuda()
     tokens = nmt.refine(z, mask, return_tokens=True)
-    import pdb;pdb.set_trace()
+    line = tgt_vocab.decode(tokens[0])
+    print(line)
     raise SystemExit
 
 
