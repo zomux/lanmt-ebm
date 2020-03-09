@@ -64,8 +64,7 @@ class EnergyLanguageModel(Transformer):
         b_mask = (torch.rand(noise.shape[:2]) > 0.2).float()
         if torch.cuda.is_available():
             b_mask = b_mask.cuda()
-
-        import pdb;pdb.set_trace()
+        noise = noise * b_mask[:, :, None]
         noised_z = true_z + noise
         noised_z.requires_grad_(True)
         # Compute logp for both refined z and noised z
