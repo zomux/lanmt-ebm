@@ -99,10 +99,11 @@ class EnergyLanguageModel(Transformer):
         z.requires_grad_(True)
         for _ in range(n_steps):
             energy, grad = self.compute_energy(z, mask)
-            if not OPTS.evaluate:
-                print(energy.mean().detach().cpu().numpy(),
-                      grad.norm(2).detach().cpu().numpy())
-            z = z - step_size * grad
+            # if not OPTS.evaluate:
+            #     print(energy.mean().detach().cpu().numpy(),
+            #           grad.norm(2).detach().cpu().numpy())
+            # z = z - step_size * grad
+            z = grad
             # noise = torch.randn_like(z) * np.sqrt(step_size * 2)
             # z = z + step_size * grad + noise
             # norm = grad.norm(dim=2)
