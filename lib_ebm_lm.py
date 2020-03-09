@@ -33,13 +33,14 @@ class EnergyLanguageModel(Transformer):
         super(EnergyLanguageModel, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         self._coder_model = [coder_model]
         self._coder_model[0].train(False)
+        self.compute_real_grad = False
         self.enable_valid_grad = True
 
     def prepare(self):
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
         self._encoder = ConvolutionalEncoder(None, self._hidden_size, 3)
         self._latent2hidden = nn.Linear(self._latent_size, self._hidden_size)
-        if not self.enable_valid_grad:
+        if not self.compute_real_grad:
             self._hidden2latent = nn.Linear(self._latent_size, self._hidden_size)
         else:
             self._hidden2energy = nn.Sequential(
@@ -53,9 +54,12 @@ class EnergyLanguageModel(Transformer):
             mask = mask.float()
         h = self._latent2hidden(z)
         h = self._encoder(h, mask=mask)
-        energy = self._hidden2energy(h)
-        mean_energy = ((energy.squeeze(2) * mask).sum(1) / mask.sum(1)).mean()
-        grad = torch.autograd.grad(mean_energy, z, create_graph=True)[0]
+        if not self.compute_real_grad:
+            grad = self._hidden2latent(h)
+        else:
+            energy = self._hidden2energy(h)
+            mean_energy = ((energy.squeeze(2) * mask).sum(1) / mask.sum(1)).mean()
+            grad = torch.autograd.grad(mean_energy, z, create_graph=True)[0]
         return energy, grad
 
     def compute_loss(self, seq, mask):
