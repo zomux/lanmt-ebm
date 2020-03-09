@@ -161,6 +161,7 @@ class LatentEncodingNetwork(Transformer):
         sampled_z, q_prob = self.sample_from_Q(q_states)
 
         # --------------------------  Decoder -------------------------------#
+        sampled_z = F.tanh(sampled_z)
         decoder_states = self.decoder(sampled_z, mask)
 
         # --------------------------  Compute losses ------------------------#
