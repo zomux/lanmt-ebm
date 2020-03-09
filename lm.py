@@ -190,7 +190,7 @@ lanmt_options.update(dict(
 ))
 
 vae = LatentEncodingNetwork(**lanmt_options)
-vae_path = "{}/data/wmt14_ende_fair/lacoder_batchtokens-8192_distill_dtok-wmt14_fair_ende_klbudget-20.0_latentdim-{}.pt".format(os.getenv("HOME"), OPTS.latentdim)
+vae_path = "{}/data/wmt14_ende_fair/lacoder_batchtokens-8192_distill_dtok-wmt14_fair_ende_klbudget-15.0_latentdim-{}.pt".format(os.getenv("HOME"), OPTS.latentdim)
 if OPTS.disentangle:
     vae_path = vae_path.replace("_distill", "_disentangle_distill")
 print("loading", vae_path)
