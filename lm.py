@@ -256,7 +256,7 @@ if OPTS.test or OPTS.all:
     if torch.cuda.is_available():
         mask = mask.cuda()
         z = z.cuda()
-    init_z = z
+    init_z = z.clone()
     for _ in range(50):
         tokens = nmt.refine(z, mask, n_steps=1, return_tokens=True)
         z = nmt.refine(z, mask, n_steps=1)
