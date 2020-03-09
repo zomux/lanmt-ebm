@@ -39,11 +39,14 @@ class EnergyLanguageModel(Transformer):
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
         self._encoder = ConvolutionalEncoder(None, self._hidden_size, 3)
         self._latent2hidden = nn.Linear(self._latent_size, self._hidden_size)
-        self._hidden2energy = nn.Sequential(
-            nn.Linear(self._hidden_size, self.hidden_size // 2),
-            nn.ReLU(),
-            nn.Linear(self._hidden_size // 2, 1)
-        )
+        if not self.enable_valid_grad:
+            self._hidden2latent = nn.Linear(self._latent_size, self._hidden_size)
+        else:
+            self._hidden2energy = nn.Sequential(
+                nn.Linear(self._hidden_size, self.hidden_size // 2),
+                nn.ReLU(),
+                nn.Linear(self._hidden_size // 2, 1)
+            )
 
     def compute_energy(self, z, mask):
         if mask is not None:
