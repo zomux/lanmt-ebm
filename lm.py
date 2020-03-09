@@ -256,7 +256,7 @@ if OPTS.test or OPTS.all:
     if torch.cuda.is_available():
         mask = mask.cuda()
         z = z.cuda()
-    tokens = nmt.refine(z, mask, return_tokens=True)
+    tokens = nmt.refine(z, mask, n_steps=1, return_tokens=True)
     line = tgt_vocab.decode(tokens[0])
     print(" ".join(line))
     raise SystemExit
