@@ -61,6 +61,10 @@ class EnergyLanguageModel(Transformer):
             true_z = self.coder().compute_codes(seq).detach()
         # Compute delta inference
         noise = torch.randn_like(true_z)
+        b_mask = (torch.rand(noise.shape[:2]) > 0.8).float()
+        if torch.cuda.is_available():
+            b_mask = b_mask.cuda()
+
         import pdb;pdb.set_trace()
         noised_z = true_z + noise
         noised_z.requires_grad_(True)
