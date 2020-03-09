@@ -189,6 +189,8 @@ lanmt_options.update(dict(
 
 vae = LatentEncodingNetwork(**lanmt_options)
 vae_path = "{}/data/wmt14_ende_fair/lacoder_batchtokens-8192_distill_dtok-wmt14_fair_ende_klbudget-15.0_latentdim-{}_longertrain.pt".format(os.getenv("HOME"), OPTS.latentdim)
+if OPTS.disentangle:
+    vae_path = vae_path.replace("_distill", "_disentangle_distill")
 assert os.path.exists(vae_path)
 vae.load(vae_path)
 if torch.cuda.is_available():
