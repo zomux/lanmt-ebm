@@ -63,6 +63,8 @@ ap.add_argument("--opt_embedsz", type=int, default=512)
 ap.add_argument("--opt_heads", type=int, default=8)
 ap.add_argument("--opt_longertrain", action="store_true")
 ap.add_argument("--opt_x3longertrain", action="store_true")
+ap.add_argument("--opt_disentangle", action="store_true")
+
 
 # Options for LANMT
 ap.add_argument("--opt_latentdim", default=256, type=int, help="dimension of latent variables")
