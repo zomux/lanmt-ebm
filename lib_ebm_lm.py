@@ -60,7 +60,8 @@ class EnergyLanguageModel(Transformer):
         with torch.no_grad():
             true_z = self.coder().compute_codes(seq).detach()
         # Compute delta inference
-        noise = torch.randn_like(true_z) * 0.5
+        noise = torch.randn_like(true_z)
+        import pdb;pdb.set_trace()
         noised_z = true_z + noise
         noised_z.requires_grad_(True)
         # Compute logp for both refined z and noised z
