@@ -260,7 +260,8 @@ if OPTS.test or OPTS.all:
     for _ in range(50):
         tokens = nmt.refine(z, mask, n_steps=1, return_tokens=True)
         z = nmt.refine(z, mask, n_steps=1)
-        z[0, :2] = init_z[:, :2]
+        z[:, :2] = init_z[:, :2]
+        z[:, -1] = init_z[:, -1]
         line = tgt_vocab.decode(tokens[0])
         print(" ".join(line))
     raise SystemExit
