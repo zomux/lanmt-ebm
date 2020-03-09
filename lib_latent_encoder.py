@@ -192,7 +192,7 @@ class LatentEncodingNetwork(Transformer):
 
     def compute_tokens(self, codes, mask, return_logp=False):
         code_vectors = self.latent2vector_nn(codes)
-        code_vectors = OPTS.tanh(code_vectors)
+        code_vectors = F.tanh(code_vectors)
         decoder_states = self.decoder(code_vectors, mask)
         logits = self.expander_nn(decoder_states)
         tokens = logits.argmax(-1)
