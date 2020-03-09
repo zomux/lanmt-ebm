@@ -34,7 +34,7 @@ class EnergyLanguageModel(Transformer):
         self._coder_model = [coder_model]
         self._coder_model[0].train(False)
         self.compute_real_grad = False
-        self.enable_valid_grad = True
+        self.enable_valid_grad = False
 
     def prepare(self):
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
@@ -56,6 +56,7 @@ class EnergyLanguageModel(Transformer):
         h = self._encoder(h, mask=mask)
         if not self.compute_real_grad:
             grad = self._hidden2latent(h)
+            energy = None
         else:
             energy = self._hidden2energy(h)
             mean_energy = ((energy.squeeze(2) * mask).sum(1) / mask.sum(1)).mean()
@@ -75,15 +76,16 @@ class EnergyLanguageModel(Transformer):
         noised_z = true_z + noise
         noised_z.requires_grad_(True)
         # Compute logp for both refined z and noised z
-        with torch.no_grad():
-            true_logp = self.coder().compute_tokens(true_z, mask, return_logp=True)
-            noised_logp = self.coder().compute_tokens(noised_z, mask, return_logp=True)
+        # with torch.no_grad():
+        #     true_logp = self.coder().compute_tokens(true_z, mask, return_logp=True)
+        #     noised_logp = self.coder().compute_tokens(noised_z, mask, return_logp=True)
         # Compute energy scores
         energy, energy_grad = self.compute_energy(noised_z, mask)
         # Compute loss
-        score_match_loss = (((energy_grad * (true_z - noised_z) * mask[:, :, None]).sum(2).sum(1) - (true_logp - noised_logp))**2).mean()
+        # score_match_loss = (((energy_grad * (true_z - noised_z) * mask[:, :, None]).sum(2).sum(1) - (true_logp - noised_logp))**2).mean()
         # score_match_loss = ((noise - energy_grad)**2).sum(2)
-        # score_match_loss = ((score_match_loss * mask).sum(1) / mask.sum(1)).mean()
+        score_match_loss = ((noise - energy_grad)**2).sum(2)
+        score_match_loss = ((score_match_loss * mask).sum(1) / mask.sum(1)).mean()
         return {"loss": score_match_loss}
 
     def forward(self, x, y, sampling=False):
