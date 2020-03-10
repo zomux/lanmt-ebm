@@ -106,6 +106,7 @@ class EnergyLanguageModel(Transformer):
 
             # Denosing updating
             norm = (grad - z).norm(dim=2)
+            print(norm)
             max_pos = norm[:, 1:-1].argmax(1) + 1
             z[:, max_pos] = grad[:, max_pos]
             # noise = torch.randn_like(z) * np.sqrt(step_size * 2)
