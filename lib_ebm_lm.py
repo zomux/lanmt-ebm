@@ -96,6 +96,7 @@ class EnergyLanguageModel(Transformer):
     def refine(self, z, mask=None, n_steps=50, step_size=0.001, return_tokens=False):
         if mask is not None:
             mask = mask.float()
+        z = z.clone()
         z.requires_grad_(True)
         for _ in range(n_steps):
             energy, grad = self.compute_energy(z, mask)
@@ -107,7 +108,7 @@ class EnergyLanguageModel(Transformer):
             # Denosing updating
             norm = (grad - z).norm(dim=2)
             print(norm)
-            max_pos = norm[:, 1:-1].argmax(1) + 1
+            max_pos = norm[:, 2:-1].argmax(1) + 2
             z[:, max_pos] = grad[:, max_pos]
             # noise = torch.randn_like(z) * np.sqrt(step_size * 2)
             # z = z + step_size * grad + noise
