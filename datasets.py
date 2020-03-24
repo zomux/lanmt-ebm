@@ -58,7 +58,23 @@ def get_dataset_paths(data_root, dataset_tok):
         training_warmsteps = 4000
         training_maxsteps = 100000
         pretrained_autoregressive_path = "{}/wmt14_ende_teacher.pt".format(data_root)
+    if dataset_tok == "iwslt16_deen":
+        train_src_corpus = "{}/train/train.sp.de".format(data_root)
+        train_tgt_corpus = "{}/train/train.sp.en".format(data_root)
+        distilled_tgt_corpus = "{}/distill_deen/distill.sp.en".format(data_root)
+        truncate_datapoints = None
 
+        test_src_corpus = "{}/test/test.sp.de".format(data_root)
+        test_tgt_corpus = "{}/test/test.sp.en".format(data_root)
+        ref_path = "{}/test/test.en".format(data_root)
+
+        src_vocab_path = "{}/spm/iwslt16_deen_distilled.vocab".format(data_root)
+        tgt_vocab_path = "{}/spm/iwslt16_deen_distilled.vocab".format(data_root)
+
+        n_valid_per_epoch = 8
+        training_warmsteps = 4000
+        training_maxsteps = 1000000
+        pretrained_autoregressive_path = "{}/wmt14_ende_teacher.pt".format(data_root)
 
     return (
         train_src_corpus,
