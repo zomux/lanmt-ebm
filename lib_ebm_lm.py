@@ -34,7 +34,7 @@ class EnergyLanguageModel(Transformer):
         super(EnergyLanguageModel, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         self._coder_model = [coder_model]
         self._coder_model[0].train(False)
-        self.enable_valid_grad = False
+        self.enable_valid_grad = True
 
     def prepare(self):
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
