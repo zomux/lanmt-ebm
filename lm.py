@@ -25,7 +25,6 @@ from nmtlab.evaluation import MosesBLEUEvaluator, SacreBLEUEvaluator
 from collections import defaultdict
 import numpy as np
 from argparse import ArgumentParser
-from contextlib import nullcontext
 
 from lib_lanmt_model import LANMTModel
 from lanmt.lib_latent_encoder import LatentEncodingNetwork
