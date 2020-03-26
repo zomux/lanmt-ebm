@@ -31,9 +31,9 @@ class EnergyLanguageModel(Transformer):
         self._latent_size = latent_size if latent_size is not None else OPTS.latentdim
         self.set_stepwise_training(False)
         self.compute_real_grad = False
-        super(EnergyLanguageModel, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         self._coder_model = [coder_model]
         self._coder_model[0].train(False)
+        super(EnergyLanguageModel, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         self.enable_valid_grad = self.compute_real_grad
 
     def prepare(self):
