@@ -77,6 +77,7 @@ class EnergyLanguageModel(Transformer):
         # noise = noise * b_mask[:, :, None]
         noised_z = true_z + noise
         noised_z.requires_grad_(True)
+        noised_z = noised_z.detach()
         # Compute logp for both refined z and noised z
         # with torch.no_grad():
         #     true_logp = self.coder().compute_tokens(true_z, mask, return_logp=True)
@@ -85,9 +86,14 @@ class EnergyLanguageModel(Transformer):
         energy, energy_grad = self.compute_energy(noised_z, mask)
         # Compute loss
         # score_match_loss = (((energy_grad * (true_z - noised_z) * mask[:, :, None]).sum(2).sum(1) - (true_logp - noised_logp))**2).mean()
-        score_match_loss = ((noise - energy_grad)**2).sum(2)
+        # score_match_loss = ((noise - energy_grad)**2).sum(2)
         # score_match_loss = ((true_z - energy_grad)**2).sum(2)
-        score_match_loss = ((score_match_loss * mask).sum(1) / mask.sum(1)).mean()
+        # score_match_loss = ((score_match_loss * mask).sum(1) / mask.sum(1)).mean()
+
+        refined_z = noised_z
+
+        logits =
+
         return {"loss": score_match_loss}
 
     def forward(self, x, y, sampling=False):
