@@ -71,10 +71,10 @@ class EnergyLanguageModel(Transformer):
         true_z = self.latent_embeds(seq)
         # Compute delta inference
         noise = torch.randn_like(true_z)
-        b_mask = (torch.rand(noise.shape[:2]) > 0.2).float()
-        if torch.cuda.is_available():
-            b_mask = b_mask.cuda()
-        noise = noise * b_mask[:, :, None]
+        # b_mask = (torch.rand(noise.shape[:2]) > 0.2).float()
+        # if torch.cuda.is_available():
+        #     b_mask = b_mask.cuda()
+        # noise = noise * b_mask[:, :, None]
         noised_z = true_z + noise
         noised_z.requires_grad_(True)
         # Compute logp for both refined z and noised z
