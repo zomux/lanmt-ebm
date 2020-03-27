@@ -133,6 +133,7 @@ class EnergyLanguageModel(Transformer):
             # z = z.detach()
             # z.requires_grad_(True)
             # print(grad.norm(dim=2))
+        import pdb;pdb.set_trace()
         tokens = self.coder().compute_tokens(z, mask)
         if return_tokens:
             return tokens
