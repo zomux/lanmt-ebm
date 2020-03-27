@@ -96,10 +96,9 @@ class EnergyLanguageModel(Transformer):
         logits = self.expander(refined_z)
         # compute cross entropy
         loss_mat = F.cross_entropy(logits.reshape(bsize * seqsize, -1), seq.flatten(), reduction="none").reshape(bsize, seqsize)
-        (loss_mat * mask).sum() / mask.sum()
-        import pdb;pdb.set_trace()
+        loss = (loss_mat * mask).sum() / mask.sum()
 
-        return {"loss": score_match_loss}
+        return {"loss": loss}
 
     def forward(self, x, y, sampling=False):
         mask = self.to_float(torch.ne(y, 0))
