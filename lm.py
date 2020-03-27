@@ -259,11 +259,11 @@ if OPTS.test or OPTS.all:
         mask = mask.cuda()
         z = z.cuda()
     init_z = z.clone()
-    for _ in range(100):
+    for _ in range(500):
         tokens = nmt.refine(z, mask, n_steps=1, step_size=0.02, return_tokens=True)
         z = nmt.refine(z, mask, n_steps=1)
-        z[:, :2] = init_z[:, :2]
-        z[:, -1] = init_z[:, -1]
+        # z[:, :2] = init_z[:, :2]
+        # z[:, -1] = init_z[:, -1]
         line = tgt_vocab.decode(tokens[0])
         print(" ".join(line))
     raise SystemExit
