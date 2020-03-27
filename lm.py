@@ -249,7 +249,10 @@ if OPTS.test or OPTS.all:
     first_line = "Gut@@ ach : Noch ach Sicherheit für Fußgän@@ ger ."
     print(first_line)
     first_line_tokens = tgt_vocab.encode("<s> {} </s>".format(first_line.strip()).split())
-    z = vae.compute_codes(torch.tensor([first_line_tokens]))
+    input = torch.tensor([first_line_tokens])
+    if torch.cuda.is_available():
+        input = input.cuda()
+    z = vae.compute_codes(input)
     # z = torch.zeros((1, 6, OPTS.latentdim))
     mask = torch.ones((1, z.shape[1]))
     if torch.cuda.is_available():
