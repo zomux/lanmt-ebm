@@ -109,6 +109,7 @@ class EnergyLanguageModel(Transformer):
         if mask is not None:
             mask = mask.float()
         z = z.clone()
+        step_size = 1. / n_steps
         z.requires_grad_(True)
         for _ in range(n_steps):
             energy, grad = self.compute_energy(z, mask)
@@ -133,8 +134,8 @@ class EnergyLanguageModel(Transformer):
             # z = z.detach()
             # z.requires_grad_(True)
             # print(grad.norm(dim=2))
-        import pdb;pdb.set_trace()
-        tokens = self.coder().compute_tokens(z, mask)
+        tokens = self.expander(z).argmax(2)
+        # tokens = self.coder().compute_tokens(z, mask)
         if return_tokens:
             return tokens
         else:
