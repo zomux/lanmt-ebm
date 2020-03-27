@@ -37,7 +37,8 @@ class EnergyLanguageModel(Transformer):
         self.enable_valid_grad = self.compute_real_grad
 
     def prepare(self):
-        self.latent_embeds = nn.Embedding(self.coder()._tgt_vocab_size, self._latent_size)
+        # self.latent_embeds = nn.Embedding(self.coder()._tgt_vocab_size, self._latent_size)
+        self.expander_nn = nn.Linear(self._latent_size, self.coder()._tgt_vocab_size)
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
         self._encoder = ConvolutionalEncoder(None, self._hidden_size, 3)
         self._latent2hidden = nn.Linear(self._latent_size, self._hidden_size)
@@ -66,9 +67,9 @@ class EnergyLanguageModel(Transformer):
 
     def compute_loss(self, seq, mask):
         # Compute cross-entropy loss and it's gradient
-        # with torch.no_grad():
-        #     true_z = self.coder().compute_codes(seq).detach()
-        true_z = self.latent_embeds(seq)
+        with torch.no_grad():
+            true_z = self.coder().compute_codes(seq).detach()
+        # true_z = self.latent_embeds(seq)
         # Compute delta inference
         noise = torch.randn_like(true_z)
         # b_mask = (torch.rand(noise.shape[:2]) > 0.2).float()
