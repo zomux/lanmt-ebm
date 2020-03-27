@@ -92,6 +92,7 @@ class EnergyLanguageModel(Transformer):
         # score_match_loss = ((score_match_loss * mask).sum(1) / mask.sum(1)).mean()
 
         refined_z = noised_z - noise
+        bsize, 
         logits = self.expander(refined_z)
         # compute cross entropy
         import pdb;pdb.set_trace()
