@@ -124,7 +124,7 @@ class EnergyLanguageModel(Transformer):
             # z[:, max_pos] = grad[:, max_pos]
             # z = grad
             # noise = torch.randn_like(z) * np.sqrt(step_size * 2)
-            z = z + step_size * grad + noise
+            z = z + step_size * grad
             # norm = grad.norm(dim=2)
             # max_pos = norm.argmax(1)
             # if norm.max() < 0.5:
