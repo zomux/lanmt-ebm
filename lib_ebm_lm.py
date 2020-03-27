@@ -109,7 +109,7 @@ class EnergyLanguageModel(Transformer):
         if mask is not None:
             mask = mask.float()
         z = z.clone()
-        step_size = 1. / n_steps
+        # step_size = 1. / n_steps
         z.requires_grad_(True)
         for _ in range(n_steps):
             energy, grad = self.compute_energy(z, mask)
