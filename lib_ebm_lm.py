@@ -38,7 +38,7 @@ class EnergyLanguageModel(Transformer):
 
     def prepare(self):
         # self.latent_embeds = nn.Embedding(self.coder()._tgt_vocab_size, self._latent_size)
-        self.expander_nn = nn.Linear(self._latent_size, self.coder()._tgt_vocab_size)
+        self.expander = nn.Linear(self._latent_size, self.coder()._tgt_vocab_size)
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
         self._encoder = ConvolutionalEncoder(None, self._hidden_size, 3)
         self._latent2hidden = nn.Linear(self._latent_size, self._hidden_size)
@@ -92,8 +92,8 @@ class EnergyLanguageModel(Transformer):
         # score_match_loss = ((score_match_loss * mask).sum(1) / mask.sum(1)).mean()
 
         refined_z = noised_z - noise
-        import pdb;pdb.set_trace()
-        distances = self.latent_embeds.weight
+        logits = self.expander(refined_z)
+        
 
         return {"loss": score_match_loss}
 
