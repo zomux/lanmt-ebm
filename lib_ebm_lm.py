@@ -109,7 +109,7 @@ class EnergyLanguageModel(Transformer):
         loss = loss2
         yhat = logits.argmax(2)
         acc = ((yhat == seq) * mask).sum() / mask.sum()
-        noise_acc = ((yhat == seq) * noise_mask).sum() / mask.sum()
+        noise_acc = ((yhat == seq) * noise_mask).sum() / noise_mask.sum()
 
         return {"loss": loss, "acc": acc, "noise_acc": noise_acc}
 
