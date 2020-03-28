@@ -16,6 +16,7 @@ from lanmt.lib_lanmt_modules import TransformerEncoder
 from lanmt.lib_lanmt_model import LANMTModel
 from lanmt.lib_simple_encoders import ConvolutionalEncoder
 from lanmt.lib_latent_encoder import LatentEncodingNetwork
+from lanmt.lib_corrpution import random_token_corruption
 from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
 
