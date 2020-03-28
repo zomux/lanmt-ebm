@@ -15,5 +15,5 @@ def random_token_corruption(seq, vocab_size, ratio=0.2):
         nosie_tokens = nosie_tokens.cuda()
         mask = mask.cuda()
     seq = seq * mask + nosie_tokens * (1 - mask)
-    seq = seq.int()
+    seq = seq.long()
     return seq, (1. - mask)
