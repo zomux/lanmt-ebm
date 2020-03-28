@@ -72,15 +72,15 @@ class EnergyLanguageModel(Transformer):
         noise_mask = noise_mask * mask
         # Compute cross-entropy loss and it's gradient
         with torch.no_grad():
-            true_z = self.coder().compute_codes(noise_seq).detach()
+            noised_z = self.coder().compute_codes(noise_seq).detach()
         # true_z = self.latent_embeds(seq)
         # noise = torch.randn_like(true_z)
         # b_mask = (torch.rand(noise.shape[:2]) > 0.2).float()
         # if torch.cuda.is_available():
         #     b_mask = b_mask.cuda()
         # noise = noise * b_mask[:, :, None]
-        noised_z = true_z + noise
-        noised_z.requires_grad_(True)
+        # noised_z = true_z + noise
+        # noised_z.requires_grad_(True)
         noised_z = noised_z.detach()
         # Compute logp for both refined z and noised z
         # with torch.no_grad():
