@@ -260,7 +260,7 @@ if OPTS.test or OPTS.all:
         mask = mask.cuda()
         z = z.cuda()
     init_z = z.clone()
-    for _ in range(500):
+    for _ in range(50):
         tokens = nmt.refine(z, mask, n_steps=1, step_size=0.02, return_tokens=True)
         z = nmt.refine(z, mask, n_steps=1)
         z[:, 0] = init_z[:, 0]
