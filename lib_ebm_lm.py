@@ -103,8 +103,9 @@ class EnergyLanguageModel(Transformer):
         loss = (loss_mat * mask).sum() / mask.sum()
         yhat = logits.argmax(2)
         acc = ((yhat == seq) * mask).sum() / mask.sum()
+        noise_acc = ((yhat == seq) * noise_mask).sum() / mask.sum()
 
-        return {"loss": loss, "acc": acc}
+        return {"loss": loss, "acc": acc, "noise_acc": noise_acc}
 
     def forward(self, x, y, sampling=False):
         mask = self.to_float(torch.ne(y, 0))
