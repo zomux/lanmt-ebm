@@ -67,12 +67,14 @@ class EnergyLanguageModel(Transformer):
         return energy, grad
 
     def compute_loss(self, seq, mask):
+        vocab_size = self.coder()._tgt_vocab_size
+        noise_seq, noise_mask = random_token_corruption(seq, vocab_size)
+        noise_mask = noise_mask * mask
         # Compute cross-entropy loss and it's gradient
         with torch.no_grad():
-            true_z = self.coder().compute_codes(seq).detach()
+            true_z = self.coder().compute_codes(noise_seq).detach()
         # true_z = self.latent_embeds(seq)
-        # Compute delta inference
-        noise = torch.randn_like(true_z)
+        # noise = torch.randn_like(true_z)
         # b_mask = (torch.rand(noise.shape[:2]) > 0.2).float()
         # if torch.cuda.is_available():
         #     b_mask = b_mask.cuda()
