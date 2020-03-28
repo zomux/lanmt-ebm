@@ -69,6 +69,7 @@ class EnergyLanguageModel(Transformer):
     def compute_loss(self, seq, mask):
         vocab_size = self.coder()._tgt_vocab_size
         noise_seq, noise_mask = random_token_corruption(seq, vocab_size)
+        noise_seq = (noise_seq * mask).long()
         noise_mask = noise_mask * mask
         # Compute cross-entropy loss and it's gradient
         with torch.no_grad():
