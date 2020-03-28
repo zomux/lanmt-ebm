@@ -20,6 +20,7 @@ from lanmt.lib_corrpution import random_token_corruption
 from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
 
+import random
 
 class EnergyLanguageModel(Transformer):
 
@@ -91,13 +92,15 @@ class EnergyLanguageModel(Transformer):
         #     true_logp = self.coder().compute_tokens(true_z, mask, return_logp=True)
         #     noised_logp = self.coder().compute_tokens(noised_z, mask, return_logp=True)
         # Compute energy scores
-        energy, energy_grad = self.compute_energy(noised_z, mask)
+        refined_z = noised_z
+        for _ in range(random.randint(0, 10)):
+            energy, energy_grad = self.compute_energy(refined_z, mask)
+            refined_z = refined_z - energy_grad
         # Compute loss
         # score_match_loss = (((energy_grad * (true_z - noised_z) * mask[:, :, None]).sum(2).sum(1) - (true_logp - noised_logp))**2).mean()
         # score_match_loss = ((noise - energy_grad)**2).sum(2)
         # score_match_loss = ((true_z - energy_grad)**2).sum(2)
         # score_match_loss = ((score_match_loss * mask).sum(1) / mask.sum(1)).mean()
-        refined_z = noised_z - energy_grad
         bsize, seqsize = seq.shape
         logits = self.expander(refined_z)
         # compute cross entropy
