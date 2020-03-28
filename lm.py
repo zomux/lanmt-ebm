@@ -253,7 +253,8 @@ if OPTS.test or OPTS.all:
     input = torch.tensor([first_line_tokens])
     if torch.cuda.is_available():
         input = input.cuda()
-    z = vae.compute_codes(input)
+    # z = vae.compute_codes(input)
+    z = nmt.compute_prior_states(input)
     # z = torch.zeros((1, 6, OPTS.latentdim))
     mask = torch.ones((1, z.shape[1]))
     if torch.cuda.is_available():
