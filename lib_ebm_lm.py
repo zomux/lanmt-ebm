@@ -97,7 +97,6 @@ class EnergyLanguageModel(Transformer):
         # score_match_loss = ((noise - energy_grad)**2).sum(2)
         # score_match_loss = ((true_z - energy_grad)**2).sum(2)
         # score_match_loss = ((score_match_loss * mask).sum(1) / mask.sum(1)).mean()
-
         refined_z = noised_z - energy_grad
         bsize, seqsize = seq.shape
         logits = self.expander(refined_z)
