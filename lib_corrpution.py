@@ -10,9 +10,10 @@ import torch
 def random_token_corruption(seq, vocab_size, ratio=0.2):
     # seq ~ (Batch, Length)
     nosie_tokens = torch.randint(0, vocab_size + 1, seq.shape)
+    mask = (torch.rand(seq.shape) > ratio).float()
     if torch.cuda.is_available():
         nosie_tokens = nosie_tokens.cuda()
-    mask = (torch.rand(seq.shape) > ratio).float()
+        mask = mask.cuda()
     seq = seq * mask + nosie_tokens * (1 - mask)
     seq = seq.int()
     return seq, (1. - mask)
