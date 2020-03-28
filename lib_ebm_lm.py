@@ -105,7 +105,8 @@ class EnergyLanguageModel(Transformer):
         loss_mat = F.cross_entropy(logits.reshape(bsize * seqsize, -1), seq.flatten(), reduction="none").reshape(bsize, seqsize)
         loss1 = (loss_mat * mask * (1 - noise_mask)).sum() / (mask * (1 - noise_mask)).sum()
         loss2 = (loss_mat * noise_mask).sum() / noise_mask.sum()
-        loss = loss1 + loss2
+        # loss = loss1 + loss2
+        loss = loss2
         yhat = logits.argmax(2)
         acc = ((yhat == seq) * mask).sum() / mask.sum()
         noise_acc = ((yhat == seq) * noise_mask).sum() / mask.sum()
