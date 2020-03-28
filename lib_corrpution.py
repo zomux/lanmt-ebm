@@ -13,4 +13,4 @@ def random_token_corruption(seq, vocab_size, ratio=0.2):
     mask = (torch.rand(seq.shape) > ratio).float()
     seq = seq * mask + nosie_tokens * (1 - mask)
     seq = seq.int()
-    return seq
+    return seq, (1. - mask)
