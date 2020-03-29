@@ -33,15 +33,16 @@ class EnergyLanguageModel(Transformer):
         self._latent_size = latent_size if latent_size is not None else OPTS.latentdim
         self.set_stepwise_training(False)
         self.compute_real_grad = False
-        self._coder_model = [coder_model]
-        if coder_model is not None:
-            self._coder_model[0].train(False)
+        # self._coder_model = [coder_model]
+        # if coder_model is not None:
+        #     self._coder_model[0].train(False)
+        self.vocab_size = vocab_size
         super(EnergyLanguageModel, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         self.enable_valid_grad = self.compute_real_grad
 
     def prepare(self):
-        self.embed = nn.Embedding(self.coder()._tgt_vocab_size, self._latent_size)
-        self.expander = nn.Linear(self._latent_size, self.coder()._tgt_vocab_size)
+        self.embed = nn.Embedding(self.vocab_size, self._latent_size)
+        self.expander = nn.Linear(self._latent_size, self.vocab_size)
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
         self.x_encoder = ConvolutionalEncoder(None, self._latent_size, 3)
         self._encoder = ConvolutionalEncoder(None, self._hidden_size, 3)
@@ -70,8 +71,7 @@ class EnergyLanguageModel(Transformer):
         return energy, grad
 
     def compute_loss(self, seq, mask):
-        vocab_size = self.coder()._tgt_vocab_size
-        noise_seq, noise_mask = random_token_corruption(seq, vocab_size)
+        noise_seq, noise_mask = random_token_corruption(seq, self.vocab_size)
         noise_seq = (noise_seq * mask).long()
         noise_mask = noise_mask * mask
         # Compute cross-entropy loss and it's gradient
