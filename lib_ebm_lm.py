@@ -163,10 +163,10 @@ class EnergyLanguageModel(Transformer):
         else:
             return z, None
 
-    def coder(self):
-        coder = self._coder_model[0]
-        # assert isinstance(coder, LatentEncodingNetwork)
-        return coder
+    # def coder(self):
+    #     coder = self._coder_model[0]
+    #     assert isinstance(coder, LatentEncodingNetwork)
+        # return coder
 
 if __name__ == '__main__':
     import sys
