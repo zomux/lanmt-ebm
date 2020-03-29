@@ -53,24 +53,10 @@ ap.add_argument("--opt_longertrain", action="store_true")
 ap.add_argument("--opt_x3longertrain", action="store_true")
 ap.add_argument("--opt_disentangle", action="store_true")
 
-
 # Options for LANMT
 ap.add_argument("--opt_latentdim", default=256, type=int, help="dimension of latent variables")
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
-ap.add_argument("--opt_fixbug1", action="store_true", help="fix bug in length converter")
-ap.add_argument("--opt_denoise", action="store_true")
-ap.add_argument("--opt_finetune", action="store_true",
-                help="finetune the model without limiting KL with a budget")
 
-# Options only for inference
-ap.add_argument("--opt_Tcandidate_num", default=50, type=int, help="number of latent candidate for latent search")
-ap.add_argument("--opt_Tbatch_size", default=8000, type=int, help="batch size for batch translate")
-
-# Experimental options
-ap.add_argument("--opt_nokl", action="store_true")
-ap.add_argument("--opt_klbudget", type=float, default=1.0)
-ap.add_argument("--opt_beginanneal", type=int, default=-1)
-ap.add_argument("--opt_fastanneal", action="store_true")
 
 # Paths
 ap.add_argument("--model_path",
