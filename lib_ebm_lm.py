@@ -33,12 +33,8 @@ class EnergyLanguageModel(Transformer):
         self._latent_size = latent_size if latent_size is not None else OPTS.latentdim
         self.set_stepwise_training(False)
         self.compute_real_grad = False
-        # self._coder_model = [coder_model]
-        # if coder_model is not None:
-        #     self._coder_model[0].train(False)
         self.vocab_size = vocab_size
         super(EnergyLanguageModel, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
-        self.enable_valid_grad = self.compute_real_grad
 
     def prepare(self):
         self.embed = nn.Embedding(self.vocab_size, self._latent_size)
@@ -163,22 +159,3 @@ class EnergyLanguageModel(Transformer):
         else:
             return z, None
 
-    # def coder(self):
-    #     coder = self._coder_model[0]
-    #     assert isinstance(coder, LatentEncodingNetwork)
-        # return coder
-
-if __name__ == '__main__':
-    import sys
-    sys.path.append(".")
-    coder = LatentEncodingNetwork(latent_dim=256, src_vocab_size=1000, tgt_vocab_size=1000)
-    # Testing
-    lm = EnergyLanguageModel(coder, latent_size=256)
-    x = torch.tensor([[1,2,3,4,5]])
-    y = torch.tensor([[1,2,3]])
-    if torch.cuda.is_available():
-        coder.cuda()
-        lm.cuda()
-        x = x.cuda()
-        y = y.cuda()
-    lm(x, y)
