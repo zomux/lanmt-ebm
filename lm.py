@@ -262,8 +262,7 @@ if OPTS.test or OPTS.all:
         z = z.cuda()
     init_z = z.clone()
     for _ in range(10):
-        tokens = nmt.refine(z, mask, n_steps=1, step_size=1, return_tokens=True)
-        z = nmt.refine(z, mask, n_steps=1, step_size=1)
+        z, tokens = nmt.refine(z, mask, n_steps=1, step_size=1, return_tokens=True)
         # z[:, 0] = init_z[:, 0]
         # z[:, -1] = init_z[:, -1]
         line = tgt_vocab.decode(tokens[0])

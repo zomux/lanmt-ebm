@@ -155,12 +155,12 @@ class EnergyLanguageModel(Transformer):
             # z = z.detach()
             # z.requires_grad_(True)
             # print(grad.norm(dim=2))
-        tokens = self.expander(z).argmax(2)
         # tokens = self.coder().compute_tokens(z, mask)
         if return_tokens:
-            return tokens
+            tokens = self.expander(z).argmax(2)
+            return z, tokens
         else:
-            return z
+            return z, None
 
     def coder(self):
         coder = self._coder_model[0]
