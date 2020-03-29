@@ -34,7 +34,8 @@ class EnergyLanguageModel(Transformer):
         self.set_stepwise_training(False)
         self.compute_real_grad = False
         self._coder_model = [coder_model]
-        self._coder_model[0].train(False)
+        if coder_mode is not None:
+            self._coder_model[0].train(False)
         super(EnergyLanguageModel, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         self.enable_valid_grad = self.compute_real_grad
 
