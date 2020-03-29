@@ -175,7 +175,7 @@ basic_options = dict(
 # if torch.cuda.is_available():
 #     vae.cuda()
 
-nmt = EnergyLanguageModel(None, latent_size=OPTS.latentdim)
+nmt = EnergyLanguageModel(latent_size=OPTS.latentdim)
 
 
 # Training
