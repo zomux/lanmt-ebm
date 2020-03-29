@@ -24,7 +24,7 @@ import random
 
 class EnergyLanguageModel(Transformer):
 
-    def __init__(self, coder_model, hidden_size=512, latent_size=None):
+    def __init__(self, hidden_size=512, vocab_size=40000, latent_size=None):
         """
         Args:
             lanmt_model(LANMTModel)
