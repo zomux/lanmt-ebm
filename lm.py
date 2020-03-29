@@ -117,7 +117,7 @@ if is_root_node():
     if OPTS.tensorboard:
         try:
             from trains import Task
-            task = Task.init(project_name="lanmt", task_name=OPTS.result_tag, auto_connect_arg_parser=False)
+            task = Task.init(project_name="EBM_LM", task_name=OPTS.result_tag, auto_connect_arg_parser=False)
             task.connect(ap)
             task.set_random_seed(OPTS.seed)
             task.set_output_model_id(OPTS.model_tag)
