@@ -15,7 +15,6 @@ import torch
 from torch import optim
 sys.path.append(".")
 
-from trains import Task
 import nmtlab
 from nmtlab import MTTrainer, MTDataset
 from nmtlab.utils import OPTS, Vocab
