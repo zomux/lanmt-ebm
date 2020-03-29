@@ -57,6 +57,8 @@ ap.add_argument("--opt_disentangle", action="store_true")
 ap.add_argument("--opt_latentdim", default=256, type=int, help="dimension of latent variables")
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
 
+# Options for
+
 
 # Paths
 ap.add_argument("--model_path",
@@ -137,14 +139,13 @@ else:
     tgt_corpus = train_tgt_corpus
 
 
-n_valid_samples = 5000 if OPTS.finetune else 500
 if OPTS.train:
     dataset = MTDataset(
         src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
         src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
         batch_size=OPTS.batchtokens * gpu_num, batch_type="token",
         truncate=truncate_datapoints, max_length=TRAINING_MAX_TOKENS,
-        n_valid_samples=n_valid_samples)
+        n_valid_samples=500)
 else:
     dataset = None
 
