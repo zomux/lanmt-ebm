@@ -21,15 +21,10 @@ from nmtlab.utils import OPTS, Vocab
 from nmtlab.schedulers import TransformerScheduler, SimpleScheduler
 from nmtlab.utils import is_root_node
 from nmtlab.utils.monitor import trains_stop_stdout_monitor, trains_restore_stdout_monitor
-from nmtlab.evaluation import MosesBLEUEvaluator, SacreBLEUEvaluator
-from collections import defaultdict
-import numpy as np
 from argparse import ArgumentParser
 
-from lib_lanmt_model import LANMTModel
 from lanmt.lib_latent_encoder import LatentEncodingNetwork
 from lib_ebm_lm import EnergyLanguageModel
-from lib_rescoring import load_rescoring_transformer
 from datasets import get_dataset_paths
 
 DATA_ROOT = "./mydata"
