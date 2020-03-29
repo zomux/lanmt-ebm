@@ -158,6 +158,23 @@ basic_options = dict(
     seed=OPTS.seed
 )
 
+# lanmt_options = basic_options.copy()
+# lanmt_options.update(dict(
+#     latent_dim=OPTS.latentdim,
+#     KL_budget=0. if OPTS.finetune else OPTS.klbudget,
+#     max_train_steps=training_maxsteps,
+# ))
+#
+# vae = LatentEncodingNetwork(**lanmt_options)
+# vae_path = "{}/data/wmt14_ende_fair/lacoder_batchtokens-8192_distill_dtok-wmt14_fair_ende_klbudget-15.0_latentdim-{}.pt".format(os.getenv("HOME"), OPTS.latentdim)
+# if OPTS.disentangle:
+#     vae_path = vae_path.replace("_distill", "_disentangle_distill")
+# print("loading", vae_path)
+# assert os.path.exists(vae_path)
+# vae.load(vae_path)
+# if torch.cuda.is_available():
+#     vae.cuda()
+
 nmt = EnergyLanguageModel(latent_size=OPTS.latentdim)
 
 
