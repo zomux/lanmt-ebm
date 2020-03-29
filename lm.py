@@ -122,7 +122,7 @@ if is_root_node():
             task.set_random_seed(OPTS.seed)
             task.set_output_model_id(OPTS.model_tag)
             OPTS.trains_task = task
-        except e:
+        except SystemError as e:
             print(e)
             pass
         tb_logdir = os.path.join(OPTS.root, "tensorboard")
