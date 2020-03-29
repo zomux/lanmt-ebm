@@ -57,7 +57,8 @@ ap.add_argument("--opt_disentangle", action="store_true")
 ap.add_argument("--opt_latentdim", default=256, type=int, help="dimension of latent variables")
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
 
-# Options for
+# Options for LM
+ap.add_argument("--loss", default="balance")
 
 
 # Paths
