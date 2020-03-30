@@ -58,6 +58,7 @@ class EnergyLanguageModel(Transformer):
         h = self._latent2hidden(z)
         h = self._encoder(h, mask=mask)
         if not self.compute_real_grad:
+        if OPTS.modeltype != "realgrad":
             grad = self._hidden2latent(h)
             energy = None
         else:
