@@ -57,7 +57,6 @@ class EnergyLanguageModel(Transformer):
             mask = mask.float()
         h = self._latent2hidden(z)
         h = self._encoder(h, mask=mask)
-        if not self.compute_real_grad:
         if OPTS.modeltype != "realgrad":
             grad = self._hidden2latent(h)
             energy = None
@@ -76,10 +75,6 @@ class EnergyLanguageModel(Transformer):
         # Compute cross-entropy loss and it's gradient
         noise_embed = self.embed(noise_seq)
         noised_z = self.x_encoder(noise_embed, mask=mask)
-        # noise = noise * b_mask[:, :, None]
-        # noised_z = true_z + noise
-        # noised_z.requires_grad_(True)
-        noised_z = noised_z.detach()
         # Compute logp for both refined z and noised z
         refined_z = noised_z
         for _ in range(5):
