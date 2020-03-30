@@ -32,9 +32,9 @@ class EnergyLanguageModel(Transformer):
         self._hidden_size = hidden_size
         self._latent_size = latent_size if latent_size is not None else OPTS.latentdim
         self.set_stepwise_training(False)
-        self.enable_valid_grad = (OPTS.modeltype == "realgrad")
         self.vocab_size = vocab_size
         super(EnergyLanguageModel, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
+        self.enable_valid_grad = (OPTS.modeltype == "realgrad")
 
     def prepare(self):
         self.embed = nn.Embedding(self.vocab_size, self._latent_size)
