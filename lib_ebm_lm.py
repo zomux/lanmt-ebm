@@ -80,7 +80,7 @@ class EnergyLanguageModel(Transformer):
             _, refined_z = self.compute_energy(noised_z, mask)
         else:
             refined_z = noised_z
-            for _ in range(5):
+            for _ in range(OPTS.nrefine):
                 energy, energy_grad = self.compute_energy(refined_z, mask)
                 refined_z = refined_z - energy_grad
         # Compute loss
