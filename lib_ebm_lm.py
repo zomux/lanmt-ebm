@@ -70,7 +70,7 @@ class EnergyLanguageModel(Transformer):
         bsize, seqsize = seq.shape
         # Corruption to create noised sequence
         noise_seq, noise_mask = random_token_corruption(seq, self.vocab_size)
-        noise_seq = (noise_seq * mask).long()
+        noise_seq = (noise_seq.float() * mask).long()
         noise_mask = noise_mask * mask
         # Compute cross-entropy loss and it's gradient
         noise_embed = self.embed(noise_seq)
