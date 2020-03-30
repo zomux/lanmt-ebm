@@ -76,10 +76,13 @@ class EnergyLanguageModel(Transformer):
         noise_embed = self.embed(noise_seq)
         noised_z = self.x_encoder(noise_embed, mask=mask)
         # Compute logp for both refined z and noised z
-        refined_z = noised_z
-        for _ in range(5):
-            energy, energy_grad = self.compute_energy(refined_z, mask)
-            refined_z = refined_z - energy_grad
+        if OPTS.modeltype == "forward":
+            _, refined_z = self.compute_energy(noised_z, mask)
+        else:
+            refined_z = noised_z
+            for _ in range(5):
+                energy, energy_grad = self.compute_energy(refined_z, mask)
+                refined_z = refined_z - energy_grad
         # Compute loss
         logits = self.expander(refined_z)
         # compute cross entropy
