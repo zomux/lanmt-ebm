@@ -59,6 +59,7 @@ ap.add_argument("--opt_distill", action="store_true", help="train with knowledge
 
 # Options for LM
 ap.add_argument("--opt_losstype", type=str, default="balanced")
+ap.add_argument("--opt_modeltype", type=str, default="fakegrad")
 
 
 # Paths
