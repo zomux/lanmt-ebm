@@ -97,8 +97,8 @@ class EnergyLanguageModel(Transformer):
             raise NotImplementedError
         # loss = loss2
         yhat = logits.argmax(2)
-        acc = ((yhat == seq) * mask).sum() / mask.sum()
-        noise_acc = ((yhat == seq) * noise_mask).sum() / noise_mask.sum()
+        acc = ((yhat == seq).float() * mask).sum() / mask.sum()
+        noise_acc = ((yhat == seq).float() * noise_mask).sum() / noise_mask.sum()
 
         return {"loss": loss, "acc": acc, "noise_acc": noise_acc}
 
