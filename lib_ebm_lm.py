@@ -32,7 +32,7 @@ class EnergyLanguageModel(Transformer):
         self._hidden_size = hidden_size
         self._latent_size = latent_size if latent_size is not None else OPTS.latentdim
         self.set_stepwise_training(False)
-        self.compute_real_grad = False
+        self.enable_valid_grad = (OPTS.modeltype == "realgrad")
         self.vocab_size = vocab_size
         super(EnergyLanguageModel, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
 
@@ -68,38 +68,23 @@ class EnergyLanguageModel(Transformer):
         return energy, grad
 
     def compute_loss(self, seq, mask):
+        bsize, seqsize = seq.shape
         noise_seq, noise_mask = random_token_corruption(seq, self.vocab_size)
         noise_seq = (noise_seq * mask).long()
         noise_mask = noise_mask * mask
         # Compute cross-entropy loss and it's gradient
         noise_embed = self.embed(noise_seq)
         noised_z = self.x_encoder(noise_embed, mask=mask)
-        # with torch.no_grad():
-        #     noised_z = self.coder().compute_codes(noise_seq).detach()
-        # true_z = self.latent_embeds(seq)
-        # noise = torch.randn_like(true_z)
-        # b_mask = (torch.rand(noise.shape[:2]) > 0.2).float()
-        # if torch.cuda.is_available():
-        #     b_mask = b_mask.cuda()
         # noise = noise * b_mask[:, :, None]
         # noised_z = true_z + noise
         # noised_z.requires_grad_(True)
         noised_z = noised_z.detach()
         # Compute logp for both refined z and noised z
-        # with torch.no_grad():
-        #     true_logp = self.coder().compute_tokens(true_z, mask, return_logp=True)
-        #     noised_logp = self.coder().compute_tokens(noised_z, mask, return_logp=True)
-        # Compute energy scores
         refined_z = noised_z
         for _ in range(5):
             energy, energy_grad = self.compute_energy(refined_z, mask)
             refined_z = refined_z - energy_grad
         # Compute loss
-        # score_match_loss = (((energy_grad * (true_z - noised_z) * mask[:, :, None]).sum(2).sum(1) - (true_logp - noised_logp))**2).mean()
-        # score_match_loss = ((noise - energy_grad)**2).sum(2)
-        # score_match_loss = ((true_z - energy_grad)**2).sum(2)
-        # score_match_loss = ((score_match_loss * mask).sum(1) / mask.sum(1)).mean()
-        bsize, seqsize = seq.shape
         logits = self.expander(refined_z)
         # compute cross entropy
         loss_mat = F.cross_entropy(logits.reshape(bsize * seqsize, -1), seq.flatten(), reduction="none").reshape(bsize, seqsize)
