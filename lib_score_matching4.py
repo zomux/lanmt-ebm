@@ -22,6 +22,8 @@ from lib_lanmt_modules import TransformerCrossEncoder
 from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
 
+from tensorboardX import SummaryWriter
+
 class EMA(nn.Module):
     def __init__(self, mu):
         super(EMA, self).__init__()
@@ -36,7 +38,7 @@ class EMA(nn.Module):
 
 class LatentScoreNetwork4(Transformer):
 
-    def __init__(self, lanmt_model, hidden_size=256, latent_size=8, noise=0.5, training_mode="learn_energy"):
+    def __init__(self, lanmt_model, hidden_size=256, latent_size=8, noise=0.1, training_mode="learn_score"):
         """
         Args:
             lanmt_model(LANMTModel)
@@ -54,6 +56,19 @@ class LatentScoreNetwork4(Transformer):
         self.targets_diff_ref = EMA(0.9)
         self.targets_diff_sgd = EMA(0.9)
         self._mycnt = 0
+        self.tb_str = self.training_mode
+        self._tb_main = SummaryWriter(
+          log_dir="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/{}".format(training_mode),
+          filename_suffix="{}_{}".format(self.tb_str, "loss"), flush_secs=10)
+        self._tb_ref = SummaryWriter(
+          log_dir="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/{}".format(training_mode),
+          filename_suffix="{}_{}".format(self.tb_str, "ref"), flush_secs=10)
+        self._tb_1step = SummaryWriter(
+          log_dir="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/{}/1step".format(training_mode),
+          filename_suffix="{}_{}".format(self.tb_str, "1step"), flush_secs=10)
+        self._tb_10steps = SummaryWriter(
+          log_dir="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/{}/10step".format(training_mode),
+          filename_suffix="{}_{}".format(self.tb_str, "10steps"), flush_secs=10)
 
     def prepare(self):
         # self._encoder = ConvolutionalEncoder(None, self._hidden_size, 3)
@@ -108,6 +123,7 @@ class LatentScoreNetwork4(Transformer):
 
             score = score.detach()
             z = z + score * lr
+            lr = lr / 2.0
         return z
 
     def compute_targets(self, z, y_mask, x_states, x_mask, p_prob):
@@ -156,7 +172,9 @@ class LatentScoreNetwork4(Transformer):
           list(y_mask.shape) + [lanmt.hidden_size])
         p_states = lanmt.prior_encoder(pos_states, y_mask, x_states, x_mask)
         p_prob = lanmt.p_hid2lat(p_states)
-        z0 = p_prob[..., :latent_dim]
+        p_mu, p_stddev = p_prob[..., :latent_dim], F.softplus(p_prob[..., latent_dim:])
+        noise = self.noise * np.random.random_sample()
+        z0 = p_mu + p_stddev * torch.randn_like(p_stddev) * noise
 
         zs = [z0]
         z = z0
@@ -185,7 +203,7 @@ class LatentScoreNetwork4(Transformer):
 
         # z_ini = z_ini + torch.randn_like(z_ini) * (np.random.random_sample() * self.noise)
         z_ini = z0
-        z_fin = z_fin + torch.randn_like(z_fin) * (np.random.random_sample() * self.noise)
+        z_fin = z_fin
         z_diff = (z_fin - z_ini).detach()
 
         with torch.no_grad():
@@ -194,20 +212,33 @@ class LatentScoreNetwork4(Transformer):
         targets_diff = (logpyz_fin - logpyz_ini).detach()
         targets_diff_ref = self.targets_diff_ref(targets_diff.mean().item())
 
-        z_sgd = self.energy_sgd(z_ini, y_mask, x_states, x_mask, n_iter=1, lr=3.00)
-        z_sgd = z_sgd.detach()
+        z_sgd_1step = self.energy_sgd(z_ini, y_mask, x_states, x_mask, n_iter=1, lr=3.00)
+        z_sgd_10steps = self.energy_sgd(z_ini, y_mask, x_states, x_mask, n_iter=5, lr=3.00)
+        z_sgd_1step = z_sgd_1step.detach()
+        z_sgd_10steps = z_sgd_10steps.detach()
         with torch.no_grad():
-            logpyz_sgd, _, _ = self.compute_targets(z_sgd, y_mask, x_states, x_mask, p_prob)
-        targets_diff_sgd = self.targets_diff_sgd((logpyz_sgd - logpyz_ini).mean().item())
+            logpyz_sgd_1step, _, _ = self.compute_targets(z_sgd_1step, y_mask, x_states, x_mask, p_prob)
+            logpyz_sgd_10steps, _, _ = self.compute_targets(z_sgd_10steps, y_mask, x_states, x_mask, p_prob)
+        targets_diff_sgd_1step = (logpyz_sgd_1step - logpyz_ini).mean().item()
+        targets_diff_sgd_10steps = (logpyz_sgd_10steps - logpyz_ini).mean().item()
         self._mycnt += 1
         if self._mycnt % 1 == 0:
             if self.training_mode == "learn_energy":
-                energy_diff = self.compute_energy(z_sgd, y_mask, x_states, x_mask)  - self.compute_energy(z_ini, y_mask, x_states, x_mask)
-                energy_diff = energy_diff.mean().detach()
-                print ("energy_diff : {:.3f}    targets_diff : ref {:.3f}   sgd {:.3f}     ".format(
-                  energy_diff, targets_diff_ref, targets_diff_sgd))
-            elif self.training_mode == "learn_score":
-                print ("targets_diff : ref {:.3f}   sgd {:.3f}     ".format(targets_diff_ref, targets_diff_sgd))
+                energy_diff_sgd_1step = self.compute_energy(z_sgd_1step, y_mask, x_states, x_mask)\
+                    - self.compute_energy(z_ini, y_mask, x_states, x_mask)
+                energy_diff_sgd_1step = energy_diff_sgd_1step.mean().detach()
+                energy_diff_sgd_10steps = self.compute_energy(z_sgd_10steps, y_mask, x_states, x_mask)\
+                    - self.compute_energy(z_ini, y_mask, x_states, x_mask)
+                energy_diff_sgd_10steps = energy_diff_sgd_10steps.mean().detach()
+                #print ("energy_diff : {:.3f}    targets_diff : ref {:.3f}   sgd {:.3f}     ".format(
+                #  energy_diff, targets_diff_ref, targets_diff_sgd))
+                self._tb_1step.add_scalar("monitor/energy_diff", energy_diff_sgd_1step, self._mycnt)
+                self._tb_10steps.add_scalar("monitor/energy_diff", energy_diff_sgd_10steps, self._mycnt)
+            # elif self.training_mode == "learn_score":
+                #print ("targets_diff : ref {:.3f}   sgd {:.3f}     ".format(targets_diff_ref, targets_diff_sgd))
+            self._tb_ref.add_scalar("monitor/targets_diff_ref", targets_diff_ref, self._mycnt)
+            self._tb_1step.add_scalar("monitor/targets_diff", targets_diff_sgd_1step, self._mycnt)
+            self._tb_10steps.add_scalar("monitor/targets_diff", targets_diff_sgd_10steps, self._mycnt)
 
         if self.training_mode == "learn_energy":
             energy = self.compute_energy(z_ini, y_mask, x_states, x_mask)
@@ -227,12 +258,10 @@ class LatentScoreNetwork4(Transformer):
 
         score_match_loss = ( ( (score * z_diff) * y_mask[:, :, None] ).sum(2).sum(1) - (targets_diff) )**2
         score_match_loss = score_match_loss.mean(0)
+        self._tb_main.add_scalar("monitor/loss", score_match_loss, self._mycnt)
 
         # E(z, x) <- -1 * log p(y, z| x)
-        return {"loss": score_match_loss,
-                "energy_diff": energy_diff,
-                "targets_diff_ref": targets_diff_ref,
-                "targets_diff_sgd": targets_diff_sgd}
+        return {"loss": score_match_loss}
 
     def forward(self, x, y, sampling=False):
         x_mask = self.to_float(torch.ne(x, 0))
@@ -265,10 +294,12 @@ class LatentScoreNetwork4(Transformer):
         p_states = lanmt.prior_encoder(pos_states, y_mask, x_states, x_mask)
         p_prob = lanmt.p_hid2lat(p_states)
         z = p_prob[..., :lanmt.latent_dim]
-        z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=4, lr=0.001)
+        z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=5, lr=3.0)
+        """
         _, _, t1 = self.compute_targets(z, y_mask, x_states, x_mask, p_prob)
         _, _, t2 = self.compute_targets(z_, y_mask, x_states, x_mask, p_prob)
         print ( "{:.2f} ".format((t2-t1).mean()),  )
+        """
 
         hid = lanmt.lat2hid(z_)
         decoder_states = lanmt.decoder(hid, y_mask, x_states, x_mask)

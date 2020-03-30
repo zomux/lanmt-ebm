@@ -100,9 +100,9 @@ ap.add_argument("--opt_disentangle", action="store_true")
 
 # Paths
 ap.add_argument("--model_path",
-                default="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt.pt")
+                default="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints2/lanmt.pt")
 ap.add_argument("--result_path",
-                default="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt.result")
+                default="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints2/lanmt.result")
 OPTS.parse(ap)
 
 
