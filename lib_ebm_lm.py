@@ -69,6 +69,7 @@ class EnergyLanguageModel(Transformer):
 
     def compute_loss(self, seq, mask):
         bsize, seqsize = seq.shape
+        # Corruption to create noised sequence
         noise_seq, noise_mask = random_token_corruption(seq, self.vocab_size)
         noise_seq = (noise_seq * mask).long()
         noise_mask = noise_mask * mask
