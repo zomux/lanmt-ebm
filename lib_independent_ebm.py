@@ -46,7 +46,8 @@ class IndependentEnergyMT(Transformer):
 
     def prepare(self):
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
-        self._encoder = ConvolutionalEncoder(None, self._hidden_size, 3)
+        self.encoder = ConvolutionalEncoder(None, self._hidden_size, 3)
+        self.decoder
         self._latent2hidden = nn.Linear(self._latent_size, self._hidden_size)
         self._hidden2energy = nn.Sequential(
             nn.Linear(self._hidden_size, self.hidden_size // 2),
