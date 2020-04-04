@@ -1,6 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+"""
+Independent EBM-based MT models:
+- not relying on vae models
+- real grad
+- fake grad
+- denoising
+- grad approx loss
+"""
+
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -19,9 +29,9 @@ from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
 
 
-class LatentScoreNetwork3(Transformer):
+class IndependentEnergyMT(Transformer):
 
-    def __init__(self, lanmt_model, hidden_size=512, latent_size=8):
+    def __init__(self, hidden_size=512, latent_size=8):
         """
         Args:
             lanmt_model(LANMTModel)
@@ -30,7 +40,7 @@ class LatentScoreNetwork3(Transformer):
         self._latent_size = latent_size
         self.set_stepwise_training(False)
         self.compute_real_grad = True
-        super(LatentScoreNetwork3, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
+        super(IndependentEnergyMT, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         lanmt_model.train(False)
         self._lanmt = [lanmt_model]
         self.enable_valid_grad = True
