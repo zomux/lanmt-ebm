@@ -29,6 +29,7 @@ class EnergyLanguageModel(Transformer):
         Args:
             lanmt_model(LANMTModel)
         """
+        self._latent_size = latent_size
         self._hidden_size = latent_size
         self.set_stepwise_training(False)
         self.vocab_size = vocab_size
