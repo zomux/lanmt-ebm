@@ -31,7 +31,7 @@ from nmtlab.utils import OPTS
 
 class IndependentEnergyMT(Transformer):
 
-    def __init__(self, hidden_size=512, latent_size=8):
+    def __init__(self, hidden_size=512, latent_size=256):
         """
         Args:
             lanmt_model(LANMTModel)
