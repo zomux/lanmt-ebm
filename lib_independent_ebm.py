@@ -40,13 +40,10 @@ class IndependentEnergyMT(Transformer):
         self.embed = nn.Embedding(self.vocab_size, self._latent_size)
         self.expander = nn.Linear(self._latent_size, self.vocab_size)
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
-        self.x_encoder = ConvolutionalEncoder(None, self._latent_size, 3)
-        self._encoder = ConvolutionalEncoder(None, self._hidden_size, 3)
-        self._latent2hidden = nn.Linear(self._latent_size, self._hidden_size)
         if OPTS.modeltype != "realgrad":
-            self._hidden2latent = nn.Linear(self._hidden_size, self._latent_size)
+            self.hidden2grad = nn.Linear(self._hidden_size, self._latent_size)
         else:
-            self._hidden2energy = nn.Sequential(
+            self.hidden2energy = nn.Sequential(
                 nn.Linear(self._hidden_size, self.hidden_size // 2),
                 nn.ReLU(),
                 nn.Linear(self._hidden_size // 2, 1)
