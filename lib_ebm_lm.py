@@ -24,19 +24,19 @@ import random
 
 class EnergyLanguageModel(Transformer):
 
-    def __init__(self, hidden_size=512, vocab_size=40000, latent_size=None):
+    def __init__(self, latent_size=256, vocab_size=40000, hidden_size=None):
         """
         Args:
             lanmt_model(LANMTModel)
         """
-        self._hidden_size = hidden_size
-        self._latent_size = latent_size if latent_size is not None else OPTS.latentdim
+        self._hidden_size = latent_size
         self.set_stepwise_training(False)
         self.vocab_size = vocab_size
         super(EnergyLanguageModel, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         self.enable_valid_grad = (OPTS.modeltype == "realgrad")
 
     def prepare(self):
+        self.encoder = ConvolutionalEncoder(None, self._latent_size, 3)
         self.embed = nn.Embedding(self.vocab_size, self._latent_size)
         self.expander = nn.Linear(self._latent_size, self.vocab_size)
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
