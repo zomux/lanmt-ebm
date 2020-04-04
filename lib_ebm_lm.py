@@ -51,6 +51,7 @@ class EnergyLanguageModel(Transformer):
                 nn.ReLU(),
                 nn.Linear(self._hidden_size // 2, 1)
             )
+        import pdb;pdb.set_trace()
 
     def compute_energy(self, z, mask):
         if mask is not None:
