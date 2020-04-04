@@ -170,7 +170,8 @@ if OPTS.train or OPTS.all:
     # Training code
     scheduler = SimpleScheduler(max_epoch=20)
     # scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
-    optimizer = optim.Adam(nmt.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-4)
+    lr = 0.0001 * gpu_num / 8
+    optimizer = optim.Adam(nmt.parameters(), lr=lr, betas=(0.9, 0.98), eps=1e-4)
 
     trainer = MTTrainer(
         nmt, dataset, optimizer,
