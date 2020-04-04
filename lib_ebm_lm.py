@@ -83,7 +83,6 @@ class EnergyLanguageModel(Transformer):
             for _ in range(OPTS.nrefine):
                 energy, energy_grad = self.compute_energy(refined_z, mask)
                 refined_z = refined_z - energy_grad
-            import pdb;pdb.set_trace()
         # Compute loss
         logits = self.expander(refined_z)
         # compute cross entropy
