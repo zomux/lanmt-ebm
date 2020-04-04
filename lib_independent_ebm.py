@@ -42,7 +42,6 @@ class IndependentEnergyMT(Transformer):
         self.compute_real_grad = True
         super(IndependentEnergyMT, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         lanmt_model.train(False)
-        self._lanmt = [lanmt_model]
         self.enable_valid_grad = True
 
     def prepare(self):
@@ -121,7 +120,8 @@ class IndependentEnergyMT(Transformer):
 
     def forward(self, x, y, sampling=False):
         x_mask = self.to_float(torch.ne(x, 0))
-        score_map = self.compute_loss(x, x_mask)
+        y_mask = self.to_float(torch.ne(y, 0))
+        score_map = self.compute_loss(x, x_mask, y, y_mask)
         return score_map
 
     def refine(self, z, x, mask=None, n_steps=50, step_size=0.001):
@@ -148,9 +148,6 @@ class IndependentEnergyMT(Transformer):
         if not OPTS.evaluate:
             raise SystemExit
         return z
-
-    def nmt(self):
-        return self._lanmt[0]
 
 if __name__ == '__main__':
     import sys
