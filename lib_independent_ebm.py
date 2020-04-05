@@ -44,7 +44,7 @@ class IndependentEnergyMT(Transformer):
         self.decoder = ConvolutionalEncoder(None, self._latent_size, 3)
         self.x_embed = nn.Embedding(self._src_vocab_size, self._latent_size)
         self.y_embed = nn.Embedding(self._tgt_vocab_size, self._latent_size)
-        self.expander = nn.Linear(self._latent_size, self.vocab_size)
+        self.expander = nn.Linear(self._latent_size, self._tgt_vocab_size)
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
         if OPTS.modeltype != "realgrad":
             self.hidden2grad = ConvolutionalEncoder(None, self._latent_size, 3)
