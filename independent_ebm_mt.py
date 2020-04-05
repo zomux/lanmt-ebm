@@ -22,6 +22,7 @@ from nmtlab.utils.monitor import trains_stop_stdout_monitor, trains_restore_stdo
 from argparse import ArgumentParser
 
 from lib_horovod import initialize_horovod
+from lib_trains import initialize_trains
 
 from lib_ebm_lm import EnergyLanguageModel
 from datasets import get_dataset_paths
