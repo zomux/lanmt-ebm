@@ -69,8 +69,8 @@ class IndependentEnergyMT(Transformer):
         return energy, grad
 
     def compute_loss(self, x, x_mask, y, y_mask):
-        bsize, seqsize = y.shape
-        # Corruption to create noised sequence
+        bsize, ylen = y.shape
+        # Corruption the target sequence to get input
         if OPTS.corruption == "tgt":
             noise_y, noise_mask = random_token_corruption(y, self._tgt_vocab_size)
             noise_y = (noise_y.float() * y_mask).long()
@@ -91,7 +91,7 @@ class IndependentEnergyMT(Transformer):
         # Compute loss
         logits = self.expander(refined_z)
         # compute cross entropy
-        loss_mat = F.cross_entropy(logits.reshape(bsize * seqsize, -1), seq.flatten(), reduction="none").reshape(bsize, seqsize)
+        loss_mat = F.cross_entropy(logits.reshape(bsize * ylen, -1), seq.flatten(), reduction="none").reshape(bsize, ylen)
         if OPTS.losstype == "single":
             loss = (loss_mat * mask).sum() / mask.sum()
         elif OPTS.losstype == "balanced":
