@@ -12,6 +12,10 @@ import numpy as np
 import sys
 sys.path.append(".")
 
+""""
+Independent MT refinement model wihtout VAE pre-training.
+"""
+
 from lanmt.lib_lanmt_modules import TransformerEncoder
 from lanmt.lib_lanmt_model import LANMTModel
 from lanmt.lib_simple_encoders import ConvolutionalEncoder
@@ -105,12 +109,6 @@ class IndependentEnergyMT(Transformer):
         x_mask = self.to_float(torch.ne(x, 0))
         score_map = self.compute_loss(x, x_mask, y, y_mask)
         return score_map
-
-    def compute_prior_states(self, seq):
-        mask = (seq > 0).float()
-        embed = self.embed(seq)
-        return self.x_encoder(embed, mask=mask)
-
 
     def refine(self, z, mask=None, n_steps=50, step_size=0.001, return_tokens=False):
         if mask is not None:
