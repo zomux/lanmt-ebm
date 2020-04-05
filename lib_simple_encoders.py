@@ -128,7 +128,7 @@ class ConvolutionalEncoder(nn.Module):
 class ConvolutionalCrossEncoderLayer(nn.Module):
 
     def __init__(self, size, ff_size=None, n_att_head=8, dropout_ratio=0.1):
-        super(TransformerCrossEncoderLayer, self).__init__()
+        super(ConvolutionalCrossEncoderLayer, self).__init__()
         if ff_size is None:
             ff_size = size * 4
         self.dropout = nn.Dropout(dropout_ratio)
