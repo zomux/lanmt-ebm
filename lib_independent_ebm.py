@@ -93,9 +93,9 @@ class IndependentEnergyMT(Transformer):
         # compute cross entropy
         loss_mat = F.cross_entropy(logits.reshape(bsize * ylen, -1), y.flatten(), reduction="none").reshape(bsize, ylen)
         if OPTS.losstype == "single":
-            loss = (loss_mat * mask).sum() / mask.sum()
+            loss = (loss_mat * y_mask).sum() / y_mask.sum()
         elif OPTS.losstype == "balanced":
-            loss1 = (loss_mat * mask * (1 - noise_mask)).sum() / (mask * (1 - noise_mask)).sum()
+            loss1 = (loss_mat * y_mask * (1 - noise_mask)).sum() / (y_mask * (1 - noise_mask)).sum()
             loss2 = (loss_mat * noise_mask).sum() / noise_mask.sum()
             loss = loss1 + loss2
         else:
