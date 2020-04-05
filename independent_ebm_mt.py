@@ -79,7 +79,7 @@ OPTS.result_path = OPTS.result_path.replace(DATA_ROOT, OPTS.root)
 gpu_index, gpu_num = initialize_horovod()
 
 # Trains Logging
-initialize_trains(ap, "IND_EBM_MT", OPTS.result_tag)
+tb_logdir = initialize_trains(ap, "IND_EBM_MT", OPTS.result_tag)
 
 # Get the path variables
 (
