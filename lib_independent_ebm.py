@@ -104,7 +104,7 @@ class IndependentEnergyMT(Transformer):
         # loss = loss2
         yhat = logits.argmax(2)
         acc = ((yhat == y).float() * y_mask).sum() / y_mask.sum()
-        noise_acc = ((yhat == seq).float() * noise_mask).sum() / noise_mask.sum()
+        noise_acc = ((yhat == y).float() * noise_mask).sum() / noise_mask.sum()
 
         return {"loss": loss, "acc": acc, "noise_acc": noise_acc}
 
