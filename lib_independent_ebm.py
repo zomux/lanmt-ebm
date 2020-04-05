@@ -87,7 +87,7 @@ class IndependentEnergyMT(Transformer):
                 energy, energy_grad = self.compute_energy(refined_z, y_mask)
                 refined_z = refined_z - energy_grad
         elif OPTS.modeltype == "forward":
-            
+            _, refined_z = self.compute_energy(noise_z, y_mask)
         # Compute logp for both refined z and noised z
         if OPTS.modeltype == "forward":
             _, refined_z = self.compute_energy(noised_z, mask)
