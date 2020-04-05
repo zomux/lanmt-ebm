@@ -40,7 +40,7 @@ class IndependentEnergyMT(Transformer):
 
     def prepare(self):
         self.encoder = ConvolutionalEncoder(None, self._latent_size, 3)
-        self.decoder = ConvolutionalDecoder(None, self._latent_size, 3)
+        self.decoder = ConvolutionalEncoder(None, self._latent_size, 3)
         self.x_embed = nn.Embedding(self.vocab_size, self._latent_size)
         self.y_embed = nn.Embedding(self.vocab_size, self._latent_size)
         self.expander = nn.Linear(self._latent_size, self.vocab_size)
@@ -89,7 +89,8 @@ class IndependentEnergyMT(Transformer):
         elif OPTS.modeltype == "forward":
             _, refined_z = self.compute_energy(noise_z, y_mask)
         # Compute decoder and get logits
-        logits = self.expander(refined_z)
+        decoder_states = self.decoder(refined_z)
+        logits = self.expander(decoder_states)
         # compute cross entropy
         loss_mat = F.cross_entropy(logits.reshape(bsize * ylen, -1), seq.flatten(), reduction="none").reshape(bsize, ylen)
         if OPTS.losstype == "single":
