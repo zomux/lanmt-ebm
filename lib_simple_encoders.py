@@ -94,7 +94,7 @@ class DisentangledCrossEncoderLayer(nn.Module):
 
 class ConvolutionalEncoder(nn.Module):
 
-    def __init__(self, embed_layer, size, n_layers=3, dropout_ratio=0.1, skip_connect=False):
+    def __init__(self, embed_layer, size, n_layers=3, dropout_ratio=0.1, cross_attention=False, skip_connect=False):
         super(ConvolutionalEncoder, self).__init__()
         self.embed_layer = embed_layer
         self.encoder_layers = nn.ModuleList()
