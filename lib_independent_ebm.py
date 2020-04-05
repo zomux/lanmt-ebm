@@ -26,6 +26,9 @@ from nmtlab.utils import OPTS
 
 import random
 
+def identity(x):
+    return x
+
 class IndependentEnergyMT(Transformer):
 
     def __init__(self, latent_size=256, src_vocab_size=40000, tgt_vocab_size=40000, hidden_size=None):
