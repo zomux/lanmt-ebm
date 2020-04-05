@@ -49,7 +49,12 @@ class IndependentEnergyMT(Transformer):
             self.encoder = ConvolutionalEncoder(None, self._latent_size, 3)
         else:
             raise NotImplementedError
-        self.decoder = ConvolutionalEncoder(None, self._latent_size, 3)
+        if OPTS.dectype == "identity":
+            self.decoder = identity
+        elif OPTS.dectype == "conv":
+            self.decoder = ConvolutionalEncoder(None, self._latent_size, 3)
+        else:
+            raise NotImplementedError
         self.x_embed = nn.Embedding(self._src_vocab_size, self._latent_size)
         self.y_embed = nn.Embedding(self._tgt_vocab_size, self._latent_size)
         self.expander = nn.Linear(self._latent_size, self._tgt_vocab_size)

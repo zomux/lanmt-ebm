@@ -62,6 +62,7 @@ ap.add_argument("--opt_corruption", type=str, default="target")
 ap.add_argument("--opt_losstype", type=str, default="single")
 ap.add_argument("--opt_modeltype", type=str, default="fakegrad")
 ap.add_argument("--opt_enctype", type=str, default="conv")
+ap.add_argument("--opt_dectype", type=str, default="conv")
 ap.add_argument("--opt_nrefine", type=int, default=1)
 
 
