@@ -78,27 +78,8 @@ OPTS.result_path = OPTS.result_path.replace(DATA_ROOT, OPTS.root)
 # Determine the number of GPUs to use
 gpu_index, gpu_num = initialize_horovod()
 
-# Tensorboard Logging
-tb_logdir = None
-OPTS.trains_task = None
-if is_root_node():
-    print("Running on {} GPUs".format(gpu_num))
-    if OPTS.tensorboard:
-        try:
-            from trains import Task
-            task = Task.init(project_name="EBM_LM",
-                             task_name=OPTS.result_tag,
-                             auto_connect_arg_parser=False,
-                             output_uri="{}/data/model_backups".format(os.getenv("HOME")))
-            task.connect(ap)
-            task.set_random_seed(OPTS.seed)
-            OPTS.trains_task = task
-        except SystemError as e:
-            print(e)
-            pass
-        tb_logdir = os.path.join(OPTS.root, "tensorboard")
-        if not os.path.exists(tb_logdir):
-            os.mkdir(tb_logdir)
+# Trains Logging
+initialize_trains(ap, "IND_EBM_MT", OPTS.result_tag)
 
 # Get the path variables
 (
