@@ -26,7 +26,7 @@ from nmtlab.utils import OPTS
 
 import random
 
-def identity(x):
+def identity(x, mask=None):
     return x
 
 class IndependentEnergyMT(Transformer):
