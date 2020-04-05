@@ -9,8 +9,6 @@ from __future__ import division
 from __future__ import print_function
 
 import os, sys
-import time
-import importlib
 import torch
 from torch import optim
 sys.path.append(".")
@@ -23,7 +21,8 @@ from nmtlab.utils import is_root_node
 from nmtlab.utils.monitor import trains_stop_stdout_monitor, trains_restore_stdout_monitor
 from argparse import ArgumentParser
 
-from lanmt.lib_latent_encoder import LatentEncodingNetwork
+from lib_horovod import initialize_horovod
+
 from lib_ebm_lm import EnergyLanguageModel
 from datasets import get_dataset_paths
 
@@ -76,18 +75,7 @@ OPTS.model_path = OPTS.model_path.replace(DATA_ROOT, OPTS.root)
 OPTS.result_path = OPTS.result_path.replace(DATA_ROOT, OPTS.root)
 
 # Determine the number of GPUs to use
-horovod_installed = importlib.util.find_spec("horovod") is not None
-if torch.cuda.is_available() and horovod_installed:
-    import horovod.torch as hvd
-    hvd.init()
-    torch.cuda.set_device(hvd.local_rank())
-    part_index = hvd.rank()
-    part_num = hvd.size()
-    gpu_num = hvd.size()
-else:
-    part_index = 0
-    part_num = 1
-    gpu_num = 1
+gpu_index, gpu_num = initialize_horovod()
 
 # Tensorboard Logging
 tb_logdir = None
@@ -179,7 +167,7 @@ if OPTS.train or OPTS.all:
     trainer = MTTrainer(
         nmt, dataset, optimizer,
         scheduler=scheduler, multigpu=gpu_num > 1,
-        using_horovod=horovod_installed)
+        using_horovod=gpu_num > 1)
     OPTS.trainer = trainer
     trainer.configure(
         save_path=OPTS.model_path,
