@@ -71,9 +71,12 @@ class IndependentEnergyMT(Transformer):
     def compute_loss(self, x, x_mask, y, y_mask):
         bsize, seqsize = y.shape
         # Corruption to create noised sequence
-        noise_seq, noise_mask = random_token_corruption(seq, self.vocab_size)
-        noise_seq = (noise_seq.float() * mask).long()
-        noise_mask = noise_mask * mask
+        if OPTS.corruption == "tgt":
+            noise_y, noise_mask = random_token_corruption(y, self._tgt_vocab_size)
+            noise_y = (noise_y.float() * y_mask).long()
+            noise_mask = noise_mask * y_mask
+        else:
+            raise NotImplementedError
         # Compute cross-entropy loss and it's gradient
         noise_embed = self.embed(noise_seq)
         noised_z = self.x_encoder(noise_embed, mask=mask)
