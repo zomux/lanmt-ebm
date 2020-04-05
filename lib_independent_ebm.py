@@ -101,7 +101,7 @@ class IndependentEnergyMT(Transformer):
         return {"loss": loss, "acc": acc, "noise_acc": noise_acc}
 
     def forward(self, x, y, sampling=False):
-        mask = self.to_float(torch.ne(y, 0))
+        y_mask = self.to_float(torch.ne(y, 0))
         score_map = self.compute_loss(y, mask)
         return score_map
 
