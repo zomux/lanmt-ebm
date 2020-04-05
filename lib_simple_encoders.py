@@ -9,6 +9,7 @@ import math
 import torch
 import torch.nn as nn
 from nmtlab.modules.transformer_modules import MultiHeadAttention
+from nmtlab.modules.transformer_modules import TransformerFeedForward
 from nmtlab.modules.transformer_modules import residual_connect
 
 
@@ -122,3 +123,39 @@ class ConvolutionalEncoder(nn.Module):
             if self.skip_connect:
                 x = self._rescale * (first_x + x)
         return x
+
+
+class TransformerCrossEncoderLayer(nn.Module):
+
+    def __init__(self, size, ff_size=None, n_att_head=8, dropout_ratio=0.1, relative_pos=False):
+        super(TransformerCrossEncoderLayer, self).__init__()
+        if ff_size is None:
+            ff_size = size * 4
+        self.dropout = nn.Dropout(dropout_ratio)
+        self.attention = MultiHeadAttention(size, n_att_head, dropout_ratio=dropout_ratio, relative_pos=relative_pos)
+        self.cross_attention = MultiHeadAttention(size, n_att_head, dropout_ratio=dropout_ratio, relative_pos=relative_pos)
+        self.ff_layer = TransformerFeedForward(size, ff_size, dropout_ratio=dropout_ratio)
+        self.layer_norm1 = nn.LayerNorm(size)
+        self.layer_norm2 = nn.LayerNorm(size)
+        self.layer_norm3 = nn.LayerNorm(size)
+
+    def forward(self, x, x_mask, y, y_mask):
+        # Attention layer
+        h1 = self.layer_norm1(x)
+        h1, _ = self.attention(h1, h1, h1, mask=x_mask)
+        h1 = self.dropout(h1)
+        h1 = residual_connect(h1, x)
+        # Cross-attention
+        h2 = self.layer_norm2(h1)
+        if OPTS.fixbug2:
+            h2, _ = self.cross_attention(h2, y, y, mask=y_mask)
+        else:
+            h2, _ = self.attention(h2, y, y, mask=y_mask)
+        h2 = self.dropout(h2)
+        h2 = residual_connect(h2, h1)
+        # Feed-forward layer
+        h3 = self.layer_norm3(h2)
+        h3 = self.ff_layer(h3)
+        h3 = self.dropout(h3)
+        h3 = residual_connect(h3, h2)
+        return h
