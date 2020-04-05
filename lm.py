@@ -100,7 +100,7 @@ if is_root_node():
             task = Task.init(project_name="EBM_LM",
                              task_name=OPTS.result_tag,
                              auto_connect_arg_parser=False,
-                             output_uri=)
+                             output_uri=OPTS.model_path)
             task.connect(ap)
             task.set_random_seed(OPTS.seed)
             OPTS.trains_task = task
