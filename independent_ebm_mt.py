@@ -24,7 +24,7 @@ from argparse import ArgumentParser
 from lib_horovod import initialize_horovod
 from lib_trains import initialize_trains
 
-from lib_ebm_lm import EnergyLanguageModel
+from lib_independent_ebm import IndependentEnergyMT
 from datasets import get_dataset_paths
 
 DATA_ROOT = "./mydata"
@@ -135,7 +135,7 @@ basic_options = dict(
     seed=OPTS.seed
 )
 
-nmt = EnergyLanguageModel(latent_size=OPTS.latentdim)
+nmt = IndependentEnergyMT(latent_size=OPTS.latentdim)
 
 
 # Training
