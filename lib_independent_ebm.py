@@ -68,8 +68,8 @@ class IndependentEnergyMT(Transformer):
             grad = torch.autograd.grad(mean_energy, z, create_graph=True)[0]
         return energy, grad
 
-    def compute_loss(self, seq, mask):
-        bsize, seqsize = seq.shape
+    def compute_loss(self, x, x_mask, y, y_mask):
+        bsize, seqsize = y.shape
         # Corruption to create noised sequence
         noise_seq, noise_mask = random_token_corruption(seq, self.vocab_size)
         noise_seq = (noise_seq.float() * mask).long()
