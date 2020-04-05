@@ -64,9 +64,9 @@ ap.add_argument("--opt_nrefine", type=int, default=5)
 
 # Paths
 ap.add_argument("--model_path",
-                default="{}/lm.pt".format(DATA_ROOT))
+                default="{}/indp_mt.pt".format(DATA_ROOT))
 ap.add_argument("--result_path",
-                default="{}/lm.result".format(DATA_ROOT))
+                default="{}/indp_mt.result".format(DATA_ROOT))
 OPTS.parse(ap)
 
 OPTS.fix_bug1 = True
