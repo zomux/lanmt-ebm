@@ -60,7 +60,7 @@ class IndependentEnergyMT(Transformer):
         h = self._latent2hidden(z)
         h = self._encoder(h, mask=mask)
         if OPTS.modeltype != "realgrad":
-            grad = self._hidden2latent(h)
+            grad = self.hidden2grad(h)
             energy = None
         else:
             energy = self._hidden2energy(h)
@@ -77,9 +77,11 @@ class IndependentEnergyMT(Transformer):
             noise_mask = noise_mask * y_mask
         else:
             raise NotImplementedError
-        # Compute cross-entropy loss and it's gradient
-        noise_embed = self.embed(noise_seq)
-        noised_z = self.x_encoder(noise_embed, mask=mask)
+        # Compute encoder
+        noise_y_embed = self.y_embed(noise_y)
+        noise_z = self.encoder(noise_y_embed, mask=y_mask)
+        # Compute energy model and refine the noise_z
+
         # Compute logp for both refined z and noised z
         if OPTS.modeltype == "forward":
             _, refined_z = self.compute_energy(noised_z, mask)
