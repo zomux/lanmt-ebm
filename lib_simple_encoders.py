@@ -145,7 +145,9 @@ class TransformerCrossEncoderLayer(nn.Module):
     def forward(self, x, x_mask, y, y_mask):
         # Attention layer
         h1 = self.layer_norm1(x)
+        h1 = h1.transpose(1, 2)
         h1, _ = self.conv(h1, h1, h1, mask=x_mask)
+        h1 = h1.transpose(1, 2)
         h1 = self.dropout(h1)
         h1 = residual_connect(h1, x)
         # Cross-attention
