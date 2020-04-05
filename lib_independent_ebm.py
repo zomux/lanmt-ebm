@@ -88,15 +88,7 @@ class IndependentEnergyMT(Transformer):
                 refined_z = refined_z - energy_grad
         elif OPTS.modeltype == "forward":
             _, refined_z = self.compute_energy(noise_z, y_mask)
-        # Compute logp for both refined z and noised z
-        if OPTS.modeltype == "forward":
-            _, refined_z = self.compute_energy(noised_z, mask)
-        else:
-            refined_z = noised_z
-            for _ in range(OPTS.nrefine):
-                energy, energy_grad = self.compute_energy(refined_z, mask)
-                refined_z = refined_z - energy_grad
-        # Compute loss
+        # Compute decoder and get logits
         logits = self.expander(refined_z)
         # compute cross entropy
         loss_mat = F.cross_entropy(logits.reshape(bsize * ylen, -1), seq.flatten(), reduction="none").reshape(bsize, ylen)
