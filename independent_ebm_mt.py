@@ -58,6 +58,7 @@ ap.add_argument("--opt_latentdim", default=256, type=int, help="dimension of lat
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
 
 # Options for LM
+ap.add_argument("--opt_corruption", type=str, default="target")
 ap.add_argument("--opt_losstype", type=str, default="single")
 ap.add_argument("--opt_modeltype", type=str, default="fakegrad")
 ap.add_argument("--opt_nrefine", type=int, default=1)
