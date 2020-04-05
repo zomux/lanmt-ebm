@@ -18,5 +18,6 @@ def initialize_horovod():
     else:
         part_index = 0
         part_num = 1
+    print("Running on {} GPUs".format(part_num))
     return part_index, part_num
 
