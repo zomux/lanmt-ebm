@@ -91,7 +91,7 @@ class IndependentEnergyMT(Transformer):
         decoder_states = self.decoder(refined_z)
         logits = self.expander(decoder_states)
         # compute cross entropy
-        loss_mat = F.cross_entropy(logits.reshape(bsize * ylen, -1), seq.flatten(), reduction="none").reshape(bsize, ylen)
+        loss_mat = F.cross_entropy(logits.reshape(bsize * ylen, -1), y.flatten(), reduction="none").reshape(bsize, ylen)
         if OPTS.losstype == "single":
             loss = (loss_mat * mask).sum() / mask.sum()
         elif OPTS.losstype == "balanced":
