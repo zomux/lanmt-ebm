@@ -58,13 +58,11 @@ class IndependentEnergyMT(Transformer):
     def compute_energy(self, z, mask):
         if mask is not None:
             mask = mask.float()
-        h = self._latent2hidden(z)
-        h = self._encoder(h, mask=mask)
         if OPTS.modeltype != "realgrad":
-            grad = self.hidden2grad(h)
+            grad = self.hidden2grad(z)
             energy = None
         else:
-            energy = self._hidden2energy(h)
+            energy = self._hidden2energy(z)
             mean_energy = ((energy.squeeze(2) * mask).sum(1) / mask.sum(1)).mean()
             grad = torch.autograd.grad(mean_energy, z, create_graph=True)[0]
         return energy, grad
