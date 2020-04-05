@@ -28,3 +28,4 @@ def initialize_trains(arg_parser, project_name, tag):
             tb_logdir = os.path.join(OPTS.root, "tensorboard")
             if not os.path.exists(tb_logdir):
                 os.mkdir(tb_logdir)
+    return tb_logdir
