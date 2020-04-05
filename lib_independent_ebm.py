@@ -33,6 +33,7 @@ class IndependentEnergyMT(Transformer):
         Args:
             lanmt_model(LANMTModel)
         """
+        self._latent_size = latent_size
         self._hidden_size = latent_size
         self.set_stepwise_training(False)
         super(IndependentEnergyMT, self).__init__(src_vocab_size=src_vocab_size, tgt_vocab_size=tgt_vocab_size)
