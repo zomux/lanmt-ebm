@@ -166,18 +166,13 @@ class ConvolutionalCrossEncoderLayer(nn.Module):
 class ConvolutionalCrossEncoder(nn.Module):
 
     def __init__(self, embed_layer, size, n_layers=3, dropout_ratio=0.1, skip_connect=False):
-        super(ConvolutionalEncoder, self).__init__()
+        super(ConvolutionalCrossEncoder, self).__init__()
         self.embed_layer = embed_layer
         self.encoder_layers = nn.ModuleList()
-        self.norm_layers = nn.ModuleList()
         self.skip_connect = skip_connect
         self._rescale = 1. / math.sqrt(2)
         for _ in range(n_layers):
-            self.norm_layers.append(nn.LayerNorm(size))
-            layer = nn.Sequential(
-                nn.Conv1d(size, size, 3, padding=1),
-                nn.ReLU(),
-                nn.Dropout(p=dropout_ratio))
+            layer = ConvolutionalCrossEncoderLayer(size, dropout_ratio=dropout_ratio)
             self.encoder_layers.append(layer)
 
     def forward(self, x, mask=None):
@@ -186,8 +181,7 @@ class ConvolutionalCrossEncoder(nn.Module):
         first_x = x
         for l, layer in enumerate(self.encoder_layers):
             prev_x = x
-            x = self.norm_layers[l](x)
-            x = layer(x.transpose(1, 2)).transpose(1, 2)
+            x = layer(x, mask)
             if mask is not None:
                 x = x * mask[:, :, None]
             x = prev_x + x
