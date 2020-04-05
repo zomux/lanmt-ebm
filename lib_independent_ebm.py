@@ -43,9 +43,9 @@ class IndependentEnergyMT(Transformer):
         self.enable_valid_grad = (OPTS.modeltype == "realgrad")
 
     def prepare(self):
-        if OPTS.encarch == "identity":
+        if OPTS.enctype == "identity":
             self.encoder = identity
-        elif OPTS.encarch == "conv":
+        elif OPTS.enctype == "conv":
             self.encoder = ConvolutionalEncoder(None, self._latent_size, 3)
         else:
             raise NotImplementedError
