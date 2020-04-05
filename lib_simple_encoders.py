@@ -175,13 +175,13 @@ class ConvolutionalCrossEncoder(nn.Module):
             layer = ConvolutionalCrossEncoderLayer(size, dropout_ratio=dropout_ratio)
             self.encoder_layers.append(layer)
 
-    def forward(self, x, mask=None):
+    def forward(self, x, x_mask, y, y_mask):
         if self.embed_layer is not None:
             x = self.embed_layer(x)
         first_x = x
         for l, layer in enumerate(self.encoder_layers):
             prev_x = x
-            x = layer(x, mask)
+            x = layer(x, )
             if mask is not None:
                 x = x * mask[:, :, None]
             x = prev_x + x
