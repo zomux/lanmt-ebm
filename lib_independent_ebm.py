@@ -81,7 +81,13 @@ class IndependentEnergyMT(Transformer):
         noise_y_embed = self.y_embed(noise_y)
         noise_z = self.encoder(noise_y_embed, mask=y_mask)
         # Compute energy model and refine the noise_z
-
+        if OPTS.modeltype == "fakegrad":
+            refined_z = noise_z
+            for _ in range(OPTS.nrefine):
+                energy, energy_grad = self.compute_energy(refined_z, y_mask)
+                refined_z = refined_z - energy_grad
+        elif OPTS.modeltype == "forward":
+            
         # Compute logp for both refined z and noised z
         if OPTS.modeltype == "forward":
             _, refined_z = self.compute_energy(noised_z, mask)
