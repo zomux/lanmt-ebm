@@ -81,9 +81,13 @@ class IndependentEnergyMT(Transformer):
         if y_mask is not None:
             y_mask = y_mask.float()
         if OPTS.modeltype != "realgrad":
-            grad = self.hidden2grad(z)
+            if OPTS.ebm.startswith("cross"):
+                grad = self.ebm(z, y_mask, x_states, x_mask)
+            else:
+                grad = self.ebm(z, y_mask)
             energy = None
         else:
+            raise NotImplementedError
             energy = self._hidden2energy(z)
             mean_energy = ((energy.squeeze(2) * y_mask).sum(1) / y_mask.sum(1)).mean()
             grad = torch.autograd.grad(mean_energy, z, create_graph=True)[0]
