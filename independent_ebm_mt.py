@@ -76,7 +76,7 @@ ap.add_argument("--result_path",
 OPTS.parse(ap)
 
 OPTS.fix_bug1 = True
-OPTS.fix_bug2 = False
+OPTS.fix_bug2 = True
 OPTS.model_path = OPTS.model_path.replace(DATA_ROOT, OPTS.root)
 OPTS.result_path = OPTS.result_path.replace(DATA_ROOT, OPTS.root)
 
