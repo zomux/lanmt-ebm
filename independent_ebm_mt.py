@@ -208,7 +208,7 @@ if OPTS.test or OPTS.all:
     with open(OPTS.result_path, "w") as outf:
         for i, line in enumerate(lines):
             # Make a batch
-            tokens = tgt_vocab.encode("<s> {} </s>".format(line.strip()).split())
+            tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
             x = torch.tensor([tokens])
             if torch.cuda.is_available():
                 x = x.cuda()
