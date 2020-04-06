@@ -188,7 +188,15 @@ if OPTS.test or OPTS.all:
     # Load LANMT
     src_vocab = Vocab(src_vocab_path)
     tgt_vocab = Vocab(tgt_vocab_path)
-    lanmt = LANMTModel()
+    lanmt_options = dict(
+        src_vocab_size=src_vocab.size(),
+        tgt_vocab_size=tgt_vocab.size(),
+        hidden_size=512, embed_size=512,
+        n_att_heads=8,
+        prior_layers=6, decoder=6, latent_dim=8
+    )
+    lanmt = LANMTModel(**lanmt_options)
+    lanmt.load()
 
     # Testing for langauge model
     lines = open(test_tgt_corpus).readlines()
