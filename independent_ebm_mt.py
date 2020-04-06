@@ -26,7 +26,6 @@ from lib_trains import initialize_trains
 
 from lib_independent_ebm import IndependentEnergyMT
 from lib_lanmt_model import LANMTModel
-
 from datasets import get_dataset_paths
 
 DATA_ROOT = "./mydata"
