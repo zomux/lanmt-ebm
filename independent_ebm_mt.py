@@ -186,7 +186,7 @@ if OPTS.test or OPTS.all:
     nmt.train(False)
 
     # Load LANMT
-
+    
 
 
     src_vocab = Vocab(src_vocab_path)
