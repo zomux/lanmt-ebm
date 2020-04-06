@@ -362,7 +362,7 @@ class LANMTModel(Transformer):
 
     def standard_gaussian_dist(self, batch_size, seq_size):
         shape = (batch_size, seq_size, self.latent_dim)
-        return torch.cat([torch.zeros(shape).cuda(), torch.ones(shape).cuda() * 0.55], 2)
+        return torch.cat([torch.zeros(shape), torch.ones(shape) * 0.55], 2).cuda()
 
     def get_BLEU(self, batch_y_hat, batch_y):
         """Get the average smoothed BLEU of the predictions."""
