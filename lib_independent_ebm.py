@@ -49,12 +49,16 @@ class IndependentEnergyMT(Transformer):
             self.encoder = identity
         elif OPTS.enctype == "conv":
             self.encoder = ConvolutionalEncoder(None, self._latent_size, 3)
+        elif OPTS.enctype == "crossconv":
+            self.encoder = ConvolutionalCrossEncoder(None, self._latent_size, 3)
         else:
             raise NotImplementedError
         if OPTS.dectype == "identity":
             self.decoder = identity
         elif OPTS.dectype == "conv":
             self.decoder = ConvolutionalEncoder(None, self._latent_size, 3)
+        elif OPTS.dectype == "crossconv":
+            self.decoder = ConvolutionalCrossEncoder(None, self._latent_size, 3)
         else:
             raise NotImplementedError
         self.x_embed = nn.Embedding(self._src_vocab_size, self._latent_size)
@@ -104,6 +108,7 @@ class IndependentEnergyMT(Transformer):
             raise NotImplementedError
         # Compute encoder
         noise_y_embed = self.y_embed(noise_y)
+        if OPTS.enctype.startswith("cross"):
         noise_z = self.encoder(noise_y_embed, mask=y_mask)
         # Pre-compute source states
         if OPTS.ebmtype.startswith("cross"):
