@@ -51,7 +51,7 @@ ap.add_argument("--test_fix_length", type=int, default=0)
 ap.add_argument("--all", action="store_true")
 ap.add_argument("-tb", "--tensorboard", action="store_true")
 ap.add_argument("--use_pretrain", action="store_true", help="use pretrained model trained by Raphael Shu")
-ap.add_argument("--opt_dtok", default="", type=str, help="dataset token")
+ap.add_argument("--opt_dtok", default="iwslt16_deen", type=str, help="dataset token")
 ap.add_argument("--opt_seed", type=int, default=3, help="random seed")
 ap.add_argument("--opt_tied", action="store_true")
 
@@ -68,6 +68,12 @@ ap.add_argument("--opt_x3longertrain", action="store_true")
 ap.add_argument("--opt_priorl", type=int, default=6, help="layers for each z encoder")
 ap.add_argument("--opt_decoderl", type=int, default=6, help="number of decoder layers")
 ap.add_argument("--opt_latentdim", default=8, type=int, help="dimension of latent variables")
+
+ap.add_argument("--opt_noise", default="none", type=str)
+ap.add_argument("--opt_targets", default="xent", type=str)
+ap.add_argument("--opt_decoder", default="fixed", type=str)
+ap.add_argument("--opt_training_mode", default="energy", type=str)
+
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
 ap.add_argument("--opt_annealbudget", action="store_true", help="switch of annealing KL budget")
 ap.add_argument("--opt_fixbug1", action="store_true", help="fix bug in length converter")
@@ -76,7 +82,6 @@ ap.add_argument("--opt_scorenet", action="store_true")
 ap.add_argument("--opt_denoise", action="store_true")
 ap.add_argument("--opt_finetune", action="store_true",
                 help="finetune the model without limiting KL with a budget")
-#ap.add_argument("--opt_training_mode", default="learn_energy", type=str, help="dataset token")
 
 # Options only for inference
 ap.add_argument("--opt_Trefine_steps", type=int, default=0, help="steps of running iterative refinement")
@@ -100,9 +105,9 @@ ap.add_argument("--opt_disentangle", action="store_true")
 
 # Paths
 ap.add_argument("--model_path",
-                default="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints2/lanmt.pt")
+                default="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt.pt")
 ap.add_argument("--result_path",
-                default="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints2/lanmt.result")
+                default="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt.result")
 OPTS.parse(ap)
 
 
@@ -214,16 +219,28 @@ lanmt_options.update(dict(
 nmt = LANMTModel2(**lanmt_options)
 if OPTS.scorenet:
     OPTS.shard = 0
-    lanmt_model_path = OPTS.model_path.replace("_scorenet", "")
-    lanmt_model_path = lanmt_model_path.replace("_denoise", "")
+    #lanmt_model_path = OPTS.model_path.replace("_scorenet", "")
+    #lanmt_model_path = lanmt_model_path.replace("_denoise", "")
+    #lanmt_model_path = lanmt_model_path.replace("_training_mode", "")
+    #lanmt_model_path = lanmt_model_path.replace("_noise-0.3", "")
+    lanmt_model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
+    #lanmt_model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_finetune_tied.pt"
     assert os.path.exists(lanmt_model_path)
     nmt.load(lanmt_model_path)
-    print ("Successfully loaded: {}".format(lanmt_model_path))
+    print ("Successfully loaded LANMT: {}".format(lanmt_model_path))
     if torch.cuda.is_available():
         nmt.cuda()
-    from lib_score_matching4 import LatentScoreNetwork4
-    nmt = LatentScoreNetwork4(nmt)
-
+    from lib_score_matching5 import LatentScoreNetwork5
+    #from lib_score_matching4 import LatentScoreNetwork4
+    nmt = LatentScoreNetwork5(
+    #nmt = LatentScoreNetwork4(
+        nmt,
+        hidden_size=OPTS.hiddensz,
+        latent_size=OPTS.latentdim,
+        noise=OPTS.noise,
+        targets=OPTS.targets,
+        decoder=OPTS.decoder,
+        training_mode=OPTS.training_mode,)
 
 # Training
 if OPTS.train or OPTS.all:
@@ -323,17 +340,13 @@ if OPTS.test or OPTS.all:
             x = torch.tensor([tokens])
             if torch.cuda.is_available():
                 x = x.cuda()
-            x_mask = torch.ne(x, 0)
             start_time = time.time()
             # with torch.no_grad() if not OPTS.scorenet else nullcontext():
                 # Predict latent and target words from prior
-            targets = scorenet.translate(x, n_iter=10, lr=0.1)
+            targets = scorenet.translate(x, n_iter=4, lr=0.5)
             target_tokens = targets.cpu().numpy()[0].tolist()
             if targets is None:
                 target_tokens = [2, 2, 2]
-            elif OPTS.Tteacher_rescore:
-                scores = OPTS.teacher(x, targets)
-                target_tokens = targets[scores.argmax()]
             # Record decoding time
             end_time = time.time()
             decode_times.append((end_time - start_time) * 1000.)
@@ -369,9 +382,16 @@ if OPTS.batch_test:
         print("Cannot find model in {}".format(model_path))
         sys.exit()
     nmt.load(model_path)
+    print ("Successfully loaded EBM: {}".format(model_path))
     if torch.cuda.is_available():
         nmt.cuda()
     nmt.train(False)
+    if OPTS.scorenet:
+        scorenet = nmt
+        OPTS.scorenet = scorenet
+        scorenet.train(False)
+        nmt = scorenet.nmt()
+        nmt.train(False)
     src_vocab = Vocab(src_vocab_path)
     tgt_vocab = Vocab(tgt_vocab_path)
     result_path = OPTS.result_path
@@ -403,15 +423,7 @@ if OPTS.batch_test:
         x = torch.tensor(x)
         if torch.cuda.is_available():
             x = x.cuda()
-        with torch.no_grad():
-            # Predict latent and target words from prior
-            targets, _, prior_states = nmt.translate(x)
-            # Interative inference
-            for infer_step in range(OPTS.Trefine_steps):
-                # Sample latent from Q and draw a new target prediction
-                new_latent, _ = nmt.compute_Q(x, targets)
-                targets, _, _ = nmt.translate(x, latent=new_latent, prior_states=prior_states,
-                                              refine_step=infer_step + 1)
+        targets = scorenet.translate(x, n_iter=4, lr=0.1, decay=1.0)
         target_tokens = targets.cpu().numpy().tolist()
         output_tokens.extend(target_tokens)
         sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
@@ -436,7 +448,7 @@ if OPTS.batch_test:
 if OPTS.evaluate or OPTS.all:
     # Post-processing
     if is_root_node():
-        hyp_path = "/tmp/namt_hyp.txt"
+        hyp_path = "/tmp/{}_{}_{}.txt".format(OPTS.noise, OPTS.targets, OPTS.training_mode)
         result_path = OPTS.result_path
         with open(hyp_path, "w") as outf:
             for line in open(result_path):
@@ -458,27 +470,14 @@ if OPTS.evaluate or OPTS.all:
                     line = line.replace("▁", " ").strip() + "\n"
                 outf.write(line)
         # Get BLEU score
-        if "wmt" in OPTS.dtok:
-            script = "{}/scripts/detokenize.perl".format(os.path.dirname(__file__))
-            os.system("perl {} < {} > {}.detok".format(script, hyp_path, hyp_path))
-            hyp_path = hyp_path + ".detok"
+        if "wmt" in OPTS.dtok or "iwslt" in OPTS.dtok:
             evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
+        #if "wmt" in OPTS.dtok:
+        #    script = "{}/scripts/detokenize.perl".format(os.path.dirname(__file__))
+        #    os.system("perl {} < {} > {}.detok".format(script, hyp_path, hyp_path))
+        #    hyp_path = hyp_path + ".detok"
+        #    evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
         else:
             evaluator = MosesBLEUEvaluator(ref_path=ref_path)
         bleu = evaluator.evaluate(hyp_path)
         print("BLEU =", bleu)
-
-if OPTS.analyze_latents:
-    from lanmt.lib_latent_analyzer import analyze_latents
-    nmt.load(OPTS.model_path)
-    if OPTS.scorenet:
-        scorenet = nmt
-        OPTS.scorenet = scorenet
-        scorenet.train(False)
-        if torch.cuda.is_available():
-            scorenet.cuda()
-        nmt = scorenet.nmt()
-
-    if torch.cuda.is_available():
-        nmt.cuda()
-    analyze_latents(nmt, Vocab(src_vocab_path), Vocab(tgt_vocab_path), test_src_corpus, test_tgt_corpus)
