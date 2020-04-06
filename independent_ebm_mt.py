@@ -196,37 +196,9 @@ if OPTS.test or OPTS.all:
         prior_layers=6, decoder=6, latent_dim=8
     )
     lanmt = LANMTModel(**lanmt_options)
-    lanmt.load()
+    lanmt.load(os.path.join(OPTS.root, "lanmt_annealbudget_beginanneal-20000_distill_dtok-wmt14_fair_ende_fastanneal_finetune_fixbug1_fixbug2_klbudget-10.0_x3longertrain_zeroprior.pt"))
 
-    # Testing for langauge model
-    lines = open(test_tgt_corpus).readlines()
-    first_line = lines[0]
-    first_line = "Gut@@ ach : Noch ach Sicherheit ach Fußgän@@ ger ."
-    # first_line = "ach ach ."
-    print(first_line)
-    first_line_tokens = tgt_vocab.encode("<s> {} </s>".format(first_line.strip()).split())
-    input = torch.tensor([first_line_tokens])
-    if torch.cuda.is_available():
-        input = input.cuda()
-    # z = vae.compute_codes(input)
-    z = nmt.compute_prior_states(input)
-    # z = torch.zeros((1, 6, OPTS.latentdim))
-    mask = torch.ones((1, z.shape[1]))
-    if torch.cuda.is_available():
-        mask = mask.cuda()
-        z = z.cuda()
-    init_z = z.clone()
-    for _ in range(10):
-        z, tokens = nmt.refine(z, mask, n_steps=1, step_size=0.5, return_tokens=True)
-        # z[:, 0] = init_z[:, 0]
-        # z[:, -1] = init_z[:, -1]
-        line = tgt_vocab.decode(tokens[0])
-        print(" ".join(line))
-    raise SystemExit
-
-
-    result_path = OPTS.result_path
-    # Read data
+    # Testing
     lines = open(test_tgt_corpus).readlines()
     trains_stop_stdout_monitor()
     with open(OPTS.result_path, "w") as outf:
