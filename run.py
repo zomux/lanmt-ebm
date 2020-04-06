@@ -25,7 +25,7 @@ from nmtlab.evaluation import MosesBLEUEvaluator, SacreBLEUEvaluator
 from collections import defaultdict
 import numpy as np
 from argparse import ArgumentParser
-from contextlib import nullcontext
+from contextlib import suppress
 
 from lib_lanmt_model import LANMTModel
 from lib_rescoring import load_rescoring_transformer
@@ -129,7 +129,8 @@ if is_root_node():
     if OPTS.tensorboard:
         try:
             from trains import Task
-            task = Task.init(project_name="lanmt", task_name=OPTS.result_tag, auto_connect_arg_parser=False)
+            task = Task.init(project_name="lanmt", task_name=OPTS.result_tag, auto_connect_arg_parser=False,
+                             output_uri="{}/data/model_backups".format(os.getenv("HOME")))
             task.connect(ap)
             task.set_random_seed(OPTS.seed)
             task.set_output_model_id(OPTS.model_tag)
@@ -161,6 +162,10 @@ if OPTS.longertrain:
     training_maxsteps = int(training_maxsteps * 1.5)
 if OPTS.x3longertrain:
     training_maxsteps = int(training_maxsteps * 3)
+
+training_maxsteps = int(training_maxsteps / gpu_num * 8)
+if OPTS.beginanneal > 0:
+    OPTS.beginanneal = int(OPTS.beginanneal / gpu_num * 8)
 
 if nmtlab.__version__ < "0.7.0":
     print("lanmt now requires nmtlab >= 0.7.0")
@@ -220,9 +225,9 @@ if OPTS.scorenet:
         from lanmt.lib_denoising import LatentDenoiseNetwork
         nmt = LatentDenoiseNetwork(nmt)
     else:
-        from lanmt.lib_score_matching4 import LatentScoreNetwork4
+        from lanmt.lib_score_matching3 import LatentScoreNetwork3
         # from lanmt.lib_bleu_matching import EnergyMatchingNetwork
-        nmt = LatentScoreNetwork4(nmt)
+        nmt = LatentScoreNetwork3(nmt)
 
 
 # Training
@@ -323,7 +328,7 @@ if OPTS.test or OPTS.all:
                 x = x.cuda()
             mask = torch.ne(x, 0)
             start_time = time.time()
-            with torch.no_grad() if not OPTS.scorenet else nullcontext():
+            with torch.no_grad() if not OPTS.scorenet else suppress():
                 # Predict latent and target words from prior
                 if not OPTS.scorenet:
                     targets, _, prior_states = nmt.translate(x)

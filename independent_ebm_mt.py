@@ -9,8 +9,6 @@ from __future__ import division
 from __future__ import print_function
 
 import os, sys
-import time
-import importlib
 import torch
 from torch import optim
 sys.path.append(".")
@@ -23,8 +21,11 @@ from nmtlab.utils import is_root_node
 from nmtlab.utils.monitor import trains_stop_stdout_monitor, trains_restore_stdout_monitor
 from argparse import ArgumentParser
 
-from lanmt.lib_latent_encoder import LatentEncodingNetwork
-from lib_ebm_lm import EnergyLanguageModel
+from lib_horovod import initialize_horovod
+from lib_trains import initialize_trains
+
+from lib_independent_ebm import IndependentEnergyMT
+from lib_lanmt_model import LANMTModel
 from datasets import get_dataset_paths
 
 DATA_ROOT = "./mydata"
@@ -58,58 +59,32 @@ ap.add_argument("--opt_latentdim", default=256, type=int, help="dimension of lat
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
 
 # Options for LM
-ap.add_argument("--opt_losstype", type=str, default="balanced")
+ap.add_argument("--opt_corruption", type=str, default="target")
+ap.add_argument("--opt_losstype", type=str, default="single")
 ap.add_argument("--opt_modeltype", type=str, default="fakegrad")
-ap.add_argument("--opt_nrefine", type=int, default=5)
+ap.add_argument("--opt_enctype", type=str, default="conv")
+ap.add_argument("--opt_dectype", type=str, default="conv")
+ap.add_argument("--opt_ebmtype", type=str, default="conv")
+ap.add_argument("--opt_nrefine", type=int, default=1)
 
 
 # Paths
 ap.add_argument("--model_path",
-                default="{}/lm.pt".format(DATA_ROOT))
+                default="{}/indp_mt.pt".format(DATA_ROOT))
 ap.add_argument("--result_path",
-                default="{}/lm.result".format(DATA_ROOT))
+                default="{}/indp_mt.result".format(DATA_ROOT))
 OPTS.parse(ap)
 
 OPTS.fix_bug1 = True
-OPTS.fix_bug2 = False
+OPTS.fix_bug2 = True
 OPTS.model_path = OPTS.model_path.replace(DATA_ROOT, OPTS.root)
 OPTS.result_path = OPTS.result_path.replace(DATA_ROOT, OPTS.root)
 
 # Determine the number of GPUs to use
-horovod_installed = importlib.util.find_spec("horovod") is not None
-if torch.cuda.is_available() and horovod_installed:
-    import horovod.torch as hvd
-    hvd.init()
-    torch.cuda.set_device(hvd.local_rank())
-    part_index = hvd.rank()
-    part_num = hvd.size()
-    gpu_num = hvd.size()
-else:
-    part_index = 0
-    part_num = 1
-    gpu_num = 1
+gpu_index, gpu_num = initialize_horovod()
 
-# Tensorboard Logging
-tb_logdir = None
-OPTS.trains_task = None
-if is_root_node():
-    print("Running on {} GPUs".format(gpu_num))
-    if OPTS.tensorboard:
-        try:
-            from trains import Task
-            task = Task.init(project_name="EBM_LM",
-                             task_name=OPTS.result_tag,
-                             auto_connect_arg_parser=False,
-                             output_uri="{}/data/model_backups".format(os.getenv("HOME")))
-            task.connect(ap)
-            task.set_random_seed(OPTS.seed)
-            OPTS.trains_task = task
-        except SystemError as e:
-            print(e)
-            pass
-        tb_logdir = os.path.join(OPTS.root, "tensorboard")
-        if not os.path.exists(tb_logdir):
-            os.mkdir(tb_logdir)
+# Trains Logging
+tb_logdir = initialize_trains(ap, "IND_EBM_MT", OPTS.result_tag)
 
 # Get the path variables
 (
@@ -165,7 +140,7 @@ basic_options = dict(
     seed=OPTS.seed
 )
 
-nmt = EnergyLanguageModel(latent_size=OPTS.latentdim)
+nmt = IndependentEnergyMT(latent_size=OPTS.latentdim)
 
 
 # Training
@@ -179,7 +154,7 @@ if OPTS.train or OPTS.all:
     trainer = MTTrainer(
         nmt, dataset, optimizer,
         scheduler=scheduler, multigpu=gpu_num > 1,
-        using_horovod=horovod_installed)
+        using_horovod=gpu_num > 1)
     OPTS.trainer = trainer
     trainer.configure(
         save_path=OPTS.model_path,
@@ -209,62 +184,90 @@ if OPTS.test or OPTS.all:
     if torch.cuda.is_available():
         nmt.cuda()
     nmt.train(False)
+
+    # Load LANMT
     src_vocab = Vocab(src_vocab_path)
     tgt_vocab = Vocab(tgt_vocab_path)
-
-    # Testing for langauge model
-    lines = open(test_tgt_corpus).readlines()
-    first_line = lines[0]
-    first_line = "Gut@@ ach : Noch ach Sicherheit ach Fußgän@@ ger ."
-    # first_line = "ach ach ."
-    print(first_line)
-    first_line_tokens = tgt_vocab.encode("<s> {} </s>".format(first_line.strip()).split())
-    input = torch.tensor([first_line_tokens])
+    lanmt_options = dict(
+        src_vocab_size=src_vocab.size(),
+        tgt_vocab_size=tgt_vocab.size(),
+        hidden_size=512, embed_size=512,
+        n_att_heads=8,
+        prior_layers=6, decoder_layers=6, latent_dim=8
+    )
+    OPTS.zeroprior = True
+    lanmt = LANMTModel(**lanmt_options)
+    lanmt.load(os.path.join(OPTS.root,
+                            "lanmt_annealbudget_beginanneal-20000_distill_dtok-wmt14_fair_ende_fastanneal_finetune_fixbug1_fixbug2_klbudget-10.0_x3longertrain_zeroprior.pt"))
     if torch.cuda.is_available():
-        input = input.cuda()
-    # z = vae.compute_codes(input)
-    z = nmt.compute_prior_states(input)
-    # z = torch.zeros((1, 6, OPTS.latentdim))
-    mask = torch.ones((1, z.shape[1]))
-    if torch.cuda.is_available():
-        mask = mask.cuda()
-        z = z.cuda()
-    init_z = z.clone()
-    for _ in range(10):
-        z, tokens = nmt.refine(z, mask, n_steps=1, step_size=0.5, return_tokens=True)
-        # z[:, 0] = init_z[:, 0]
-        # z[:, -1] = init_z[:, -1]
-        line = tgt_vocab.decode(tokens[0])
-        print(" ".join(line))
-    raise SystemExit
+        lanmt.cuda()
 
-
-    result_path = OPTS.result_path
-    # Read data
-    lines = open(test_tgt_corpus).readlines()
+    # Testing
+    lines = open(test_src_corpus).readlines()
     trains_stop_stdout_monitor()
     with open(OPTS.result_path, "w") as outf:
         for i, line in enumerate(lines):
             # Make a batch
-            tokens = tgt_vocab.encode("<s> {} </s>".format(line.strip()).split())
+            tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
             x = torch.tensor([tokens])
             if torch.cuda.is_available():
                 x = x.cuda()
             mask = torch.ne(x, 0).float()
-            # Compute codes
-            codes = nmt.compute_codes(x)
-            tokens = nmt.compute_tokens(codes, mask)
-            # Predict latent and target words from prior
-            target_tokens = tokens.cpu().numpy()[0].tolist()
+            # Compute base prediction with LANMT
+            with torch.no_grad():
+                prior_states = lanmt.prior_encoder(x, mask)
+                z = torch.zeros((1, x.shape[1], 8), requires_grad=True)
+                if torch.cuda.is_available():
+                    z = z.cuda()
+                latent = lanmt.latent2vector_nn(z)
+                targets, _, _ = lanmt.translate(x, latent=latent, prior_states=prior_states)
+                target_tokens = targets.cpu().numpy()[0].tolist()
+            # EBM refinement
+            # target_tokens = tokens.cpu().numpy()[0].tolist()
             # Convert token IDs back to words
             target_tokens = [t for t in target_tokens if t > 2]
             target_words = tgt_vocab.decode(target_tokens)
             target_sent = " ".join(target_words)
-            import pdb;pdb.set_trace()
             outf.write(target_sent + "\n")
             sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
             sys.stdout.flush()
     sys.stdout.write("\n")
     trains_restore_stdout_monitor()
+
+if OPTS.evaluate or OPTS.all:
+    from nmtlab.evaluation.sacre_bleu import SacreBLEUEvaluator
+    # Post-processing
+    if is_root_node():
+        hyp_path = "/tmp/namt_hyp.txt"
+        result_path = OPTS.result_path
+        with open(hyp_path, "w") as outf:
+            for line in open(result_path):
+                # Remove duplicated tokens
+                tokens = line.strip().split()
+                new_tokens = []
+                for tok in tokens:
+                    if len(new_tokens) > 0 and tok != new_tokens[-1]:
+                        new_tokens.append(tok)
+                    elif len(new_tokens) == 0:
+                        new_tokens.append(tok)
+                new_line = " ".join(new_tokens) + "\n"
+                line = new_line
+                # Remove sub-word indicator in sentencepiece and BPE
+                line = line.replace("@@ ", "")
+                if "▁" in line:
+                    line = line.strip()
+                    line = "".join(line.split())
+                    line = line.replace("▁", " ").strip() + "\n"
+                outf.write(line)
+        # Get BLEU score
+        if "wmt" in OPTS.dtok:
+            script = "{}/scripts/detokenize.perl".format(os.path.dirname(__file__))
+            os.system("perl {} < {} > {}.detok".format(script, hyp_path, hyp_path))
+            hyp_path = hyp_path + ".detok"
+            evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
+        else:
+            evaluator = MosesBLEUEvaluator(ref_path=ref_path)
+        bleu = evaluator.evaluate(hyp_path)
+        print("BLEU =", bleu)
 
 

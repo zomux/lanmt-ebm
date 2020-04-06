@@ -57,11 +57,6 @@ ap.add_argument("--opt_disentangle", action="store_true")
 ap.add_argument("--opt_latentdim", default=256, type=int, help="dimension of latent variables")
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
 
-# Options for LM
-ap.add_argument("--opt_losstype", type=str, default="balanced")
-ap.add_argument("--opt_modeltype", type=str, default="fakegrad")
-ap.add_argument("--opt_nrefine", type=int, default=5)
-
 
 # Paths
 ap.add_argument("--model_path",
@@ -97,10 +92,7 @@ if is_root_node():
     if OPTS.tensorboard:
         try:
             from trains import Task
-            task = Task.init(project_name="EBM_LM",
-                             task_name=OPTS.result_tag,
-                             auto_connect_arg_parser=False,
-                             output_uri="{}/data/model_backups".format(os.getenv("HOME")))
+            task = Task.init(project_name="EBM_LM", task_name=OPTS.result_tag, auto_connect_arg_parser=False)
             task.connect(ap)
             task.set_random_seed(OPTS.seed)
             OPTS.trains_task = task
@@ -145,13 +137,14 @@ else:
     tgt_corpus = train_tgt_corpus
 
 
+n_valid_samples = 5000 if OPTS.finetune else 500
 if OPTS.train:
     dataset = MTDataset(
         src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
         src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
         batch_size=OPTS.batchtokens * gpu_num, batch_type="token",
         truncate=truncate_datapoints, max_length=TRAINING_MAX_TOKENS,
-        n_valid_samples=500)
+        n_valid_samples=n_valid_samples)
 else:
     dataset = None
 
@@ -165,6 +158,23 @@ basic_options = dict(
     seed=OPTS.seed
 )
 
+# lanmt_options = basic_options.copy()
+# lanmt_options.update(dict(
+#     latent_dim=OPTS.latentdim,
+#     KL_budget=0. if OPTS.finetune else OPTS.klbudget,
+#     max_train_steps=training_maxsteps,
+# ))
+#
+# vae = LatentEncodingNetwork(**lanmt_options)
+# vae_path = "{}/data/wmt14_ende_fair/lacoder_batchtokens-8192_distill_dtok-wmt14_fair_ende_klbudget-15.0_latentdim-{}.pt".format(os.getenv("HOME"), OPTS.latentdim)
+# if OPTS.disentangle:
+#     vae_path = vae_path.replace("_distill", "_disentangle_distill")
+# print("loading", vae_path)
+# assert os.path.exists(vae_path)
+# vae.load(vae_path)
+# if torch.cuda.is_available():
+#     vae.cuda()
+
 nmt = EnergyLanguageModel(latent_size=OPTS.latentdim)
 
 
@@ -173,8 +183,7 @@ if OPTS.train or OPTS.all:
     # Training code
     scheduler = SimpleScheduler(max_epoch=20)
     # scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
-    lr = 0.0001 * gpu_num / 8
-    optimizer = optim.Adam(nmt.parameters(), lr=lr, betas=(0.9, 0.98), eps=1e-4)
+    optimizer = optim.Adam(nmt.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-4)
 
     trainer = MTTrainer(
         nmt, dataset, optimizer,
@@ -186,7 +195,6 @@ if OPTS.train or OPTS.all:
         n_valid_per_epoch=n_valid_per_epoch,
         criteria="loss",
         tensorboard_logdir=tb_logdir,
-        save_optim_state=False
         # clip_norm=0.1 if OPTS.scorenet else 0
     )
     if OPTS.resume:
