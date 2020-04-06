@@ -81,7 +81,7 @@ class IndependentEnergyMT(Transformer):
         if y_mask is not None:
             y_mask = y_mask.float()
         if OPTS.modeltype != "realgrad":
-            if OPTS.ebm.startswith("cross"):
+            if OPTS.ebmtype.startswith("cross"):
                 grad = self.ebm(z, y_mask, x_states, x_mask)
             else:
                 grad = self.ebm(z, y_mask)
