@@ -77,15 +77,15 @@ class IndependentEnergyMT(Transformer):
                 nn.Linear(self._hidden_size // 2, 1)
             )
 
-    def compute_energy(self, z, mask):
-        if mask is not None:
-            mask = mask.float()
+    def compute_energy(self, z, y_mask, x_states, x_mask):
+        if y_mask is not None:
+            y_mask = y_mask.float()
         if OPTS.modeltype != "realgrad":
             grad = self.hidden2grad(z)
             energy = None
         else:
             energy = self._hidden2energy(z)
-            mean_energy = ((energy.squeeze(2) * mask).sum(1) / mask.sum(1)).mean()
+            mean_energy = ((energy.squeeze(2) * y_mask).sum(1) / y_mask.sum(1)).mean()
             grad = torch.autograd.grad(mean_energy, z, create_graph=True)[0]
         return energy, grad
 
@@ -103,7 +103,9 @@ class IndependentEnergyMT(Transformer):
         noise_z = self.encoder(noise_y_embed, mask=y_mask)
         # Pre-compute source states
         if OPTS.ebmtype.startswith("cross"):
-            x_states =
+            x_states = self.x_encoder(x, x_mask)
+        else:
+            x_states = None
         # Compute energy model and refine the noise_z
         if OPTS.modeltype == "fakegrad":
             refined_z = noise_z
