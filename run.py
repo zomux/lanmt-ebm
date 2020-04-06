@@ -163,6 +163,10 @@ if OPTS.longertrain:
 if OPTS.x3longertrain:
     training_maxsteps = int(training_maxsteps * 3)
 
+training_maxsteps = int(training_maxsteps / gpu_num * 8)
+if OPTS.beginanneal > 0:
+    OPTS.beginanneal = int(OPTS.beginanneal / gpu_num * 8)
+
 if nmtlab.__version__ < "0.7.0":
     print("lanmt now requires nmtlab >= 0.7.0")
     print("Update by pip install -U nmtlab")
