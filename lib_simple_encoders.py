@@ -184,8 +184,8 @@ class ConvolutionalCrossEncoder(nn.Module):
         for l, layer in enumerate(self.encoder_layers):
             prev_x = x
             x = layer(x, x_mask, y, y_mask)
-            if mask is not None:
-                x = x * mask[:, :, None]
+            if x_mask is not None:
+                x = x * x_mask[:, :, None]
             x = prev_x + x
             if self.skip_connect:
                 x = self._rescale * (first_x + x)
