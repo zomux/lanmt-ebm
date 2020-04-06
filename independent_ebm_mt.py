@@ -213,12 +213,12 @@ if OPTS.test or OPTS.all:
             mask = torch.ne(x, 0).float()
             # Compute base prediction with LANMT
             with torch.no_grad():
-                prior_states = nmt.prior_encoder(x, mask)
+                prior_states = lanmt.prior_encoder(x, mask)
                 z = torch.zeros((1, x.shape[1], 8), requires_grad=True)
                 if torch.cuda.is_available():
                     z = z.cuda()
-                latent = nmt.latent2vector_nn(latent)
-                targets, _, _ = nmt.translate(x, latent=latent, prior_states=prior_states, refine_step=1)
+                latent = lanmt.latent2vector_nn(z)
+                targets, _, _ = lanmt.translate(x, latent=latent, prior_states=prior_states, refine_step=1)
                 target_tokens = targets.cpu().numpy()[0].tolist()
             # EBM refinement
             # target_tokens = tokens.cpu().numpy()[0].tolist()
