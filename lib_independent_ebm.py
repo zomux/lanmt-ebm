@@ -69,6 +69,7 @@ class IndependentEnergyMT(Transformer):
             self.ebm = TransformerCrossEncoder(None, self._latent_size, 3)
         else:
             raise NotImplementedError
+        self.x_encoder = ConvolutionalEncoder(self.x_embed, self._latent_size, 3)
         if OPTS.modeltype == "realgrad":
             self.latent2energy = nn.Sequential(
                 nn.Linear(self._hidden_size, self.hidden_size // 2),
@@ -101,7 +102,8 @@ class IndependentEnergyMT(Transformer):
         noise_y_embed = self.y_embed(noise_y)
         noise_z = self.encoder(noise_y_embed, mask=y_mask)
         # Pre-compute source states
-        
+        if OPTS.ebmtype.startswith("cross"):
+            x_states =
         # Compute energy model and refine the noise_z
         if OPTS.modeltype == "fakegrad":
             refined_z = noise_z
