@@ -233,6 +233,7 @@ if OPTS.test or OPTS.all:
     trains_restore_stdout_monitor()
 
 if OPTS.evaluate or OPTS.all:
+    from nmtlab.evaluation.sacre_bleu import SacreBLEUEvaluator
     # Post-processing
     if is_root_node():
         hyp_path = "/tmp/namt_hyp.txt"
