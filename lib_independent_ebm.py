@@ -19,6 +19,7 @@ Independent MT refinement model wihtout VAE pre-training.
 from lanmt.lib_lanmt_modules import TransformerEncoder
 from lanmt.lib_lanmt_model import LANMTModel
 from lanmt.lib_simple_encoders import ConvolutionalEncoder
+from lanmt.lib_simple_encoders import ConvolutionalCrossEncoder
 from lanmt.lib_latent_encoder import LatentEncodingNetwork
 from lanmt.lib_corrpution import random_token_corruption
 from nmtlab.models import Transformer
@@ -60,11 +61,13 @@ class IndependentEnergyMT(Transformer):
         self.expander = nn.Linear(self._latent_size, self._tgt_vocab_size)
         # self._encoder = TransformerEncoder(None, self._hidden_size, 3)
         if OPTS.ebmtype == "conv":
-            self.hidden2grad = ConvolutionalEncoder(None, self._latent_size, 3)
+            self.ebm = ConvolutionalEncoder(None, self._latent_size, 3)
         elif OPTS.ebmtype == "crossconv":
-            pass
+            self.ebm = Conbo
+        else:
+            raise NotImplementedError
         if OPTS.modeltype == "realgrad":
-            self.hidden2energy = nn.Sequential(
+            self.latent2energy = nn.Sequential(
                 nn.Linear(self._hidden_size, self.hidden_size // 2),
                 nn.ReLU(),
                 nn.Linear(self._hidden_size // 2, 1)
