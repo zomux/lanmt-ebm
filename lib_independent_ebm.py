@@ -108,6 +108,8 @@ class IndependentEnergyMT(Transformer):
                 refined_z = refined_z - energy_grad
         elif OPTS.modeltype == "forward":
             _, refined_z = self.compute_energy(noise_z, y_mask)
+        else:
+            raise NotImplementedError
         # Compute decoder and get logits
         decoder_states = self.decoder(refined_z)
         logits = self.expander(decoder_states)
