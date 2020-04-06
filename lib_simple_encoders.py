@@ -146,7 +146,7 @@ class ConvolutionalCrossEncoderLayer(nn.Module):
         # Attention layer
         h1 = self.layer_norm1(x)
         h1 = h1.transpose(1, 2)
-        h1, _ = self.conv(h1)
+        h1 = self.conv(h1)
         h1 = h1.transpose(1, 2)
         if x_mask is not None:
             x = x * x_mask[:, :, None]
