@@ -193,7 +193,7 @@ if OPTS.test or OPTS.all:
         tgt_vocab_size=tgt_vocab.size(),
         hidden_size=512, embed_size=512,
         n_att_heads=8,
-        prior_layers=6, decoder=6, latent_dim=8
+        prior_layers=6, decoder_layers=6, latent_dim=8
     )
     lanmt = LANMTModel(**lanmt_options)
     lanmt.load(os.path.join(OPTS.root, "lanmt_annealbudget_beginanneal-20000_distill_dtok-wmt14_fair_ende_fastanneal_finetune_fixbug1_fixbug2_klbudget-10.0_x3longertrain_zeroprior.pt"))
