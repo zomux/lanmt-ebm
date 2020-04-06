@@ -212,11 +212,15 @@ if OPTS.test or OPTS.all:
             if torch.cuda.is_available():
                 x = x.cuda()
             mask = torch.ne(x, 0).float()
-            # Compute codes
-            codes = nmt.compute_codes(x)
-            tokens = nmt.compute_tokens(codes, mask)
-            # Predict latent and target words from prior
-            target_tokens = tokens.cpu().numpy()[0].tolist()
+            # Compute base prediction with LANMT
+            with torch.no_grad():
+                prior_states = nmt.prior_encoder(x, mask)
+                z = torch.zeros((1, x.shape[1], 8), requires_grad=True).cuda()
+                latent = nmt.latent2vector_nn(latent)
+                targets, _, _ = nmt.translate(x, latent=latent, prior_states=prior_states, refine_step=1)
+                target_tokens = targets.cpu().numpy()[0].tolist()
+            # EBM refinement
+            # target_tokens = tokens.cpu().numpy()[0].tolist()
             # Convert token IDs back to words
             target_tokens = [t for t in target_tokens if t > 2]
             target_words = tgt_vocab.decode(target_tokens)
