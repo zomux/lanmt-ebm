@@ -197,9 +197,12 @@ if OPTS.test or OPTS.all:
     )
     lanmt = LANMTModel(**lanmt_options)
     lanmt.load(os.path.join(OPTS.root, "lanmt_annealbudget_beginanneal-20000_distill_dtok-wmt14_fair_ende_fastanneal_finetune_fixbug1_fixbug2_klbudget-10.0_x3longertrain_zeroprior.pt"))
+    if torch.cuda.is_available():
+        lanmt.cuda()
 
+    import pdb;pdb.set_trace()
     # Testing
-    lines = open(test_tgt_corpus).readlines()
+    lines = open(test_src_corpus).readlines()
     trains_stop_stdout_monitor()
     with open(OPTS.result_path, "w") as outf:
         for i, line in enumerate(lines):
