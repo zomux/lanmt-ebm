@@ -183,6 +183,11 @@ if OPTS.test or OPTS.all:
     if torch.cuda.is_available():
         nmt.cuda()
     nmt.train(False)
+
+    # Load LANMT
+    
+
+
     src_vocab = Vocab(src_vocab_path)
     tgt_vocab = Vocab(tgt_vocab_path)
 
