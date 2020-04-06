@@ -226,11 +226,45 @@ if OPTS.test or OPTS.all:
             target_tokens = [t for t in target_tokens if t > 2]
             target_words = tgt_vocab.decode(target_tokens)
             target_sent = " ".join(target_words)
-            import pdb;pdb.set_trace()
             outf.write(target_sent + "\n")
             sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
             sys.stdout.flush()
     sys.stdout.write("\n")
     trains_restore_stdout_monitor()
+
+if OPTS.evaluate or OPTS.all:
+    # Post-processing
+    if is_root_node():
+        hyp_path = "/tmp/namt_hyp.txt"
+        result_path = OPTS.result_path
+        with open(hyp_path, "w") as outf:
+            for line in open(result_path):
+                # Remove duplicated tokens
+                tokens = line.strip().split()
+                new_tokens = []
+                for tok in tokens:
+                    if len(new_tokens) > 0 and tok != new_tokens[-1]:
+                        new_tokens.append(tok)
+                    elif len(new_tokens) == 0:
+                        new_tokens.append(tok)
+                new_line = " ".join(new_tokens) + "\n"
+                line = new_line
+                # Remove sub-word indicator in sentencepiece and BPE
+                line = line.replace("@@ ", "")
+                if "▁" in line:
+                    line = line.strip()
+                    line = "".join(line.split())
+                    line = line.replace("▁", " ").strip() + "\n"
+                outf.write(line)
+        # Get BLEU score
+        if "wmt" in OPTS.dtok:
+            script = "{}/scripts/detokenize.perl".format(os.path.dirname(__file__))
+            os.system("perl {} < {} > {}.detok".format(script, hyp_path, hyp_path))
+            hyp_path = hyp_path + ".detok"
+            evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
+        else:
+            evaluator = MosesBLEUEvaluator(ref_path=ref_path)
+        bleu = evaluator.evaluate(hyp_path)
+        print("BLEU =", bleu)
 
 
