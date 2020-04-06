@@ -63,7 +63,7 @@ class IndependentEnergyMT(Transformer):
         if OPTS.ebmtype == "conv":
             self.ebm = ConvolutionalEncoder(None, self._latent_size, 3)
         elif OPTS.ebmtype == "crossconv":
-            self.ebm = Conbo
+            self.ebm = ConvolutionalCrossEncoder(None, self._latent_size, 3)
         else:
             raise NotImplementedError
         if OPTS.modeltype == "realgrad":
