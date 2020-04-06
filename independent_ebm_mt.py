@@ -25,6 +25,8 @@ from lib_horovod import initialize_horovod
 from lib_trains import initialize_trains
 
 from lib_independent_ebm import IndependentEnergyMT
+from lib_lanmt_model import LANMTModel
+
 from datasets import get_dataset_paths
 
 DATA_ROOT = "./mydata"
@@ -185,7 +187,7 @@ if OPTS.test or OPTS.all:
     nmt.train(False)
 
     # Load LANMT
-    
+
 
 
     src_vocab = Vocab(src_vocab_path)
