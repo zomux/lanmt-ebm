@@ -162,7 +162,7 @@ class ConvolutionalCrossEncoderLayer(nn.Module):
         h3 = self.ff_layer(h3)
         h3 = self.dropout(h3)
         h3 = residual_connect(h3, h2)
-        return h
+        return h3
 
 
 class ConvolutionalCrossEncoder(nn.Module):
