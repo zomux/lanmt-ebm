@@ -186,11 +186,9 @@ if OPTS.test or OPTS.all:
     nmt.train(False)
 
     # Load LANMT
-
-
-
     src_vocab = Vocab(src_vocab_path)
     tgt_vocab = Vocab(tgt_vocab_path)
+    lanmt = LANMTModel()
 
     # Testing for langauge model
     lines = open(test_tgt_corpus).readlines()
