@@ -106,15 +106,17 @@ class IndependentEnergyMT(Transformer):
             noise_mask = noise_mask * y_mask
         else:
             raise NotImplementedError
-        # Compute encoder
-        noise_y_embed = self.y_embed(noise_y)
-        if OPTS.enctype.startswith("cross"):
-        noise_z = self.encoder(noise_y_embed, mask=y_mask)
         # Pre-compute source states
         if OPTS.ebmtype.startswith("cross"):
             x_states = self.x_encoder(x, x_mask)
         else:
             x_states = None
+        # Compute encoder
+        noise_y_embed = self.y_embed(noise_y)
+        if OPTS.enctype.startswith("cross"):
+            noise_z = self.encoder(noise_y_embed, y_mask, x_states, x_mask)
+        else:
+            noise_z = self.encoder(noise_y_embed, mask=y_mask)
         # Compute energy model and refine the noise_z
         if OPTS.modeltype == "fakegrad":
             refined_z = noise_z
