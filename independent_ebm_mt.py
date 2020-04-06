@@ -200,7 +200,6 @@ if OPTS.test or OPTS.all:
     if torch.cuda.is_available():
         lanmt.cuda()
 
-    import pdb;pdb.set_trace()
     # Testing
     lines = open(test_src_corpus).readlines()
     trains_stop_stdout_monitor()
@@ -215,7 +214,9 @@ if OPTS.test or OPTS.all:
             # Compute base prediction with LANMT
             with torch.no_grad():
                 prior_states = nmt.prior_encoder(x, mask)
-                z = torch.zeros((1, x.shape[1], 8), requires_grad=True).cuda()
+                z = torch.zeros((1, x.shape[1], 8), requires_grad=True)
+                if torch.cuda.is_available():
+                    z = z.cuda()
                 latent = nmt.latent2vector_nn(latent)
                 targets, _, _ = nmt.translate(x, latent=latent, prior_states=prior_states, refine_step=1)
                 target_tokens = targets.cpu().numpy()[0].tolist()
