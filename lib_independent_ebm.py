@@ -128,7 +128,10 @@ class IndependentEnergyMT(Transformer):
         else:
             raise NotImplementedError
         # Compute decoder and get logits
-        decoder_states = self.decoder(refined_z)
+        if OPTS.dectype.startswith("cross"):
+            decoder_states = self.decoder(refined_z, y_mask, x_states, x_mask)
+        else:
+            decoder_states = self.decoder(refined_z)
         logits = self.expander(decoder_states)
         # compute cross entropy
         loss_mat = F.cross_entropy(logits.reshape(bsize * ylen, -1), y.flatten(), reduction="none").reshape(bsize, ylen)
