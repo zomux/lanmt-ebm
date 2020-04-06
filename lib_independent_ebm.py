@@ -100,14 +100,16 @@ class IndependentEnergyMT(Transformer):
         # Compute encoder
         noise_y_embed = self.y_embed(noise_y)
         noise_z = self.encoder(noise_y_embed, mask=y_mask)
+        # Pre-compute source states
+        
         # Compute energy model and refine the noise_z
         if OPTS.modeltype == "fakegrad":
             refined_z = noise_z
             for _ in range(OPTS.nrefine):
-                energy, energy_grad = self.compute_energy(refined_z, y_mask)
+                energy, energy_grad = self.compute_energy(refined_z, y_mask, x_states, x_mask)
                 refined_z = refined_z - energy_grad
         elif OPTS.modeltype == "forward":
-            _, refined_z = self.compute_energy(noise_z, y_mask)
+            _, refined_z = self.compute_energy(noise_z, y_mask, x_states, x_mask)
         else:
             raise NotImplementedError
         # Compute decoder and get logits
