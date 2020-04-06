@@ -213,6 +213,7 @@ if OPTS.test or OPTS.all:
             if torch.cuda.is_available():
                 x = x.cuda()
             mask = torch.ne(x, 0).float()
+            import pdb;pdb.set_trace()
             # Compute base prediction with LANMT
             with torch.no_grad():
                 prior_states = lanmt.prior_encoder(x, mask)
