@@ -195,6 +195,7 @@ if OPTS.test or OPTS.all:
         n_att_heads=8,
         prior_layers=6, decoder_layers=6, latent_dim=8
     )
+    OPTS.zeroprior = True
     lanmt = LANMTModel(**lanmt_options)
     lanmt.load(os.path.join(OPTS.root, "lanmt_annealbudget_beginanneal-20000_distill_dtok-wmt14_fair_ende_fastanneal_finetune_fixbug1_fixbug2_klbudget-10.0_x3longertrain_zeroprior.pt"))
     if torch.cuda.is_available():
