@@ -25,7 +25,7 @@ from nmtlab.evaluation import MosesBLEUEvaluator, SacreBLEUEvaluator
 from collections import defaultdict
 import numpy as np
 from argparse import ArgumentParser
-from contextlib import nullcontext
+from contextlib import suppress
 
 from lib_lanmt_model import LANMTModel
 from lib_rescoring import load_rescoring_transformer
@@ -220,9 +220,9 @@ if OPTS.scorenet:
         from lanmt.lib_denoising import LatentDenoiseNetwork
         nmt = LatentDenoiseNetwork(nmt)
     else:
-        from lanmt.lib_score_matching4 import LatentScoreNetwork4
+        from lanmt.lib_score_matching3 import LatentScoreNetwork3
         # from lanmt.lib_bleu_matching import EnergyMatchingNetwork
-        nmt = LatentScoreNetwork4(nmt)
+        nmt = LatentScoreNetwork3(nmt)
 
 
 # Training
@@ -323,7 +323,7 @@ if OPTS.test or OPTS.all:
                 x = x.cuda()
             mask = torch.ne(x, 0)
             start_time = time.time()
-            with torch.no_grad() if not OPTS.scorenet else nullcontext():
+            with torch.no_grad() if not OPTS.scorenet else suppress():
                 # Predict latent and target words from prior
                 if not OPTS.scorenet:
                     targets, _, prior_states = nmt.translate(x)
