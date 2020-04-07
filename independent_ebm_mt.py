@@ -199,6 +199,7 @@ if OPTS.test or OPTS.all:
     lanmt = LANMTModel(**lanmt_options)
     lanmt.load(os.path.join(OPTS.root,
                             "lanmt_annealbudget_beginanneal-20000_distill_dtok-wmt14_fair_ende_fastanneal_finetune_fixbug1_fixbug2_klbudget-10.0_x3longertrain_zeroprior.pt"))
+    lanmt.train(False)
     if torch.cuda.is_available():
         lanmt.cuda()
 
