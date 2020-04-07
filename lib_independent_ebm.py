@@ -125,6 +125,7 @@ class IndependentEnergyMT(Transformer):
         else:
             decoder_states = self.decoder(refined_z)
         logits = self.expander(decoder_states)
+        return logits
 
     def compute_loss(self, x, x_mask, y, y_mask):
         bsize, ylen = y.shape
