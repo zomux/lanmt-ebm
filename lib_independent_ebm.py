@@ -131,7 +131,7 @@ class IndependentEnergyMT(Transformer):
         bsize, ylen = y.shape
         # Corruption the target sequence to get input
         if OPTS.corruption == "target":
-            noise_y, noise_mask = random_token_corruption(y, self._tgt_vocab_size)
+            noise_y, noise_mask = random_token_corruption(y, self._tgt_vocab_size, OPTS.corrupt)
             noise_y = (noise_y.float() * y_mask).long()
             noise_mask = noise_mask * y_mask
         else:

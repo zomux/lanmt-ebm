@@ -60,6 +60,7 @@ ap.add_argument("--opt_distill", action="store_true", help="train with knowledge
 
 # Options for LM
 ap.add_argument("--opt_corruption", type=str, default="target")
+ap.add_argument("--opt_corrupt", type=float, default=0.2)
 ap.add_argument("--opt_losstype", type=str, default="single")
 ap.add_argument("--opt_modeltype", type=str, default="fakegrad")
 ap.add_argument("--opt_enctype", type=str, default="conv")
