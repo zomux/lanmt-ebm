@@ -75,8 +75,8 @@ ap.add_argument("--result_path",
                 default="{}/indp_mt.result".format(DATA_ROOT))
 OPTS.parse(ap)
 
-OPTS.fix_bug1 = True
-OPTS.fix_bug2 = True
+OPTS.fixbug1 = True
+OPTS.fixbug2 = True
 OPTS.model_path = OPTS.model_path.replace(DATA_ROOT, OPTS.root)
 OPTS.result_path = OPTS.result_path.replace(DATA_ROOT, OPTS.root)
 
@@ -221,7 +221,6 @@ if OPTS.test or OPTS.all:
                     z = z.cuda()
                 latent = lanmt.latent2vector_nn(z)
                 targets, _, _ = lanmt.translate(x, latent=latent, prior_states=prior_states)
-                import pdb;pdb.set_trace()
                 target_tokens = targets.cpu().numpy()[0].tolist()
             # EBM refinement
             # target_tokens = tokens.cpu().numpy()[0].tolist()
