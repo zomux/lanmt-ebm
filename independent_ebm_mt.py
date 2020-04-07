@@ -67,6 +67,7 @@ ap.add_argument("--opt_dectype", type=str, default="conv")
 ap.add_argument("--opt_ebmtype", type=str, default="conv")
 ap.add_argument("--opt_nrefine", type=int, default=1)
 
+ap.add_argument("--opt_Tbaseline", action="store_true")
 
 # Paths
 ap.add_argument("--model_path",
@@ -224,10 +225,11 @@ if OPTS.test or OPTS.all:
                 targets, _, _ = lanmt.translate(x)
                 target_tokens = targets.cpu().numpy()[0].tolist()
             # EBM refinement
-            target_mask = torch.ne(targets, 0).float()
-            logits = nmt.compute_logits(x, mask, targets, target_mask)
-            targets = logits.argmax(2)
-            target_tokens = targets.cpu().numpy()[0].tolist()
+            if not OPTS.Tbaseline:
+                target_mask = torch.ne(targets, 0).float()
+                logits = nmt.compute_logits(x, mask, targets, target_mask)
+                targets = logits.argmax(2)
+                target_tokens = targets.cpu().numpy()[0].tolist()
             # Convert token IDs back to words
             target_tokens = [t for t in target_tokens if t > 2]
             target_words = tgt_vocab.decode(target_tokens)
