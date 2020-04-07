@@ -66,6 +66,7 @@ ap.add_argument("--opt_enctype", type=str, default="conv")
 ap.add_argument("--opt_dectype", type=str, default="conv")
 ap.add_argument("--opt_ebmtype", type=str, default="conv")
 ap.add_argument("--opt_nrefine", type=int, default=1)
+ap.add_argument("--opt_epochs", type=int, default=20)
 
 ap.add_argument("--opt_Tbaseline", action="store_true")
 
