@@ -135,7 +135,7 @@ class IndependentEnergyMT(Transformer):
             noise_mask = noise_mask * y_mask
         else:
             raise NotImplementedError
-
+        logits = self.compute_logits(x, x_mask, noise_y, y_mask)
         # compute cross entropy
         loss_mat = F.cross_entropy(logits.reshape(bsize * ylen, -1), y.flatten(), reduction="none").reshape(bsize, ylen)
         if OPTS.losstype == "single":

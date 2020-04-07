@@ -224,6 +224,7 @@ if OPTS.test or OPTS.all:
                 targets, _, _ = lanmt.translate(x)
                 target_tokens = targets.cpu().numpy()[0].tolist()
             # EBM refinement
+            
             # target_tokens = tokens.cpu().numpy()[0].tolist()
             # Convert token IDs back to words
             target_tokens = [t for t in target_tokens if t > 2]
