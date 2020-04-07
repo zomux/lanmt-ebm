@@ -172,8 +172,6 @@ if OPTS.train or OPTS.all:
 
 # Translation
 if OPTS.test or OPTS.all:
-    from tensorboardX import SummaryWriter
-    tb = SummaryWriter(log_dir=tb_logdir, comment="nmtlab")
     # Translate using only one GPU
     if not is_root_node():
         sys.exit()
@@ -242,6 +240,8 @@ if OPTS.test or OPTS.all:
 
 if OPTS.evaluate or OPTS.all:
     from nmtlab.evaluation.sacre_bleu import SacreBLEUEvaluator
+    from tensorboardX import SummaryWriter
+    tb = SummaryWriter(log_dir=tb_logdir, comment="nmtlab")
     # Post-processing
     if is_root_node():
         hyp_path = "/tmp/namt_hyp.txt"
@@ -275,5 +275,6 @@ if OPTS.evaluate or OPTS.all:
             evaluator = MosesBLEUEvaluator(ref_path=ref_path)
         bleu = evaluator.evaluate(hyp_path)
         print("BLEU =", bleu)
+        tb.add_scalar("BLEU", bleu)
 
 
