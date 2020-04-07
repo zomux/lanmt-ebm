@@ -172,6 +172,8 @@ if OPTS.train or OPTS.all:
 
 # Translation
 if OPTS.test or OPTS.all:
+    from tensorboardX import SummaryWriter
+    tb = SummaryWriter(log_dir=tb_logdir, comment="nmtlab")
     # Translate using only one GPU
     if not is_root_node():
         sys.exit()
