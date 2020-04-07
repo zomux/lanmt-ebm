@@ -221,6 +221,7 @@ if OPTS.test or OPTS.all:
                     z = z.cuda()
                 latent = lanmt.latent2vector_nn(z)
                 targets, _, _ = lanmt.translate(x, latent=latent, prior_states=prior_states)
+                import pdb;pdb.set_trace()
                 target_tokens = targets.cpu().numpy()[0].tolist()
             # EBM refinement
             # target_tokens = tokens.cpu().numpy()[0].tolist()
