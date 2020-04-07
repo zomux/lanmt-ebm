@@ -220,7 +220,7 @@ if OPTS.test or OPTS.all:
                 if torch.cuda.is_available():
                     z = z.cuda()
                 latent = lanmt.latent2vector_nn(z)
-                targets, _, _ = lanmt.translate(x, latent=latent, prior_states=prior_states)
+                targets, _, _ = lanmt.translate(x)
                 target_tokens = targets.cpu().numpy()[0].tolist()
             # EBM refinement
             # target_tokens = tokens.cpu().numpy()[0].tolist()
