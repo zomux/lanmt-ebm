@@ -148,7 +148,7 @@ nmt = IndependentEnergyMT(latent_size=OPTS.latentdim)
 # Training
 if OPTS.train or OPTS.all:
     # Training code
-    scheduler = SimpleScheduler(max_epoch=20)
+    scheduler = SimpleScheduler(max_epoch=OPTS.epochs)
     # scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
     lr = 0.0001 * gpu_num / 8
     optimizer = optim.Adam(nmt.parameters(), lr=lr, betas=(0.9, 0.98), eps=1e-4)
