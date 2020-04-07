@@ -226,10 +226,8 @@ if OPTS.test or OPTS.all:
             # EBM refinement
             target_mask = torch.ne(targets, 0).float()
             logits = nmt.compute_logits(x, mask, targets, target_mask)
-            targets = 
-            print(logits.shape)
-            raise SystemExit
-            # target_tokens = tokens.cpu().numpy()[0].tolist()
+            targets = logits.argmax(2)
+            target_tokens = targets.cpu().numpy()[0].tolist()
             # Convert token IDs back to words
             target_tokens = [t for t in target_tokens if t > 2]
             target_words = tgt_vocab.decode(target_tokens)
