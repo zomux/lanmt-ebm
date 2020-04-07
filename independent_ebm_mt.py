@@ -37,7 +37,7 @@ TRAINING_MAX_TOKENS = 60
 
 ap = ArgumentParser()
 ap.add_argument("--root", type=str, default=DATA_ROOT)
-ap.add_argument("--resume", action="store_true")
+ap.add_argument("--all", action="store_true")
 ap.add_argument("--test", action="store_true")
 ap.add_argument("--train", action="store_true")
 ap.add_argument("--evaluate", action="store_true")
@@ -166,8 +166,6 @@ if OPTS.train or OPTS.all:
         save_optim_state=False
         # clip_norm=0.1 if OPTS.scorenet else 0
     )
-    if OPTS.resume:
-        trainer.load()
     trains_stop_stdout_monitor()
     trainer.run()
     trains_restore_stdout_monitor()
