@@ -226,7 +226,8 @@ if OPTS.test or OPTS.all:
             # EBM refinement
             target_mask = torch.ne(targets, 0).float()
             logits = nmt.compute_logits(x, mask, targets, target_mask)
-            import pdb;pdb.set_trace()
+            print(logits.shape)
+            raise SystemExit
             # target_tokens = tokens.cpu().numpy()[0].tolist()
             # Convert token IDs back to words
             target_tokens = [t for t in target_tokens if t > 2]
