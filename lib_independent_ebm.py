@@ -97,15 +97,7 @@ class IndependentEnergyMT(Transformer):
             grad = torch.autograd.grad(mean_energy, z, create_graph=True)[0]
         return energy, grad
 
-    def compute_loss(self, x, x_mask, y, y_mask):
-        bsize, ylen = y.shape
-        # Corruption the target sequence to get input
-        if OPTS.corruption == "target":
-            noise_y, noise_mask = random_token_corruption(y, self._tgt_vocab_size)
-            noise_y = (noise_y.float() * y_mask).long()
-            noise_mask = noise_mask * y_mask
-        else:
-            raise NotImplementedError
+    def compute_logits(self, x, x_mask, noise_y, y_mask):
         # Pre-compute source states
         if OPTS.ebmtype.startswith("cross"):
             x_states = self.x_encoder(x, x_mask)
@@ -133,6 +125,17 @@ class IndependentEnergyMT(Transformer):
         else:
             decoder_states = self.decoder(refined_z)
         logits = self.expander(decoder_states)
+
+    def compute_loss(self, x, x_mask, y, y_mask):
+        bsize, ylen = y.shape
+        # Corruption the target sequence to get input
+        if OPTS.corruption == "target":
+            noise_y, noise_mask = random_token_corruption(y, self._tgt_vocab_size)
+            noise_y = (noise_y.float() * y_mask).long()
+            noise_mask = noise_mask * y_mask
+        else:
+            raise NotImplementedError
+
         # compute cross entropy
         loss_mat = F.cross_entropy(logits.reshape(bsize * ylen, -1), y.flatten(), reduction="none").reshape(bsize, ylen)
         if OPTS.losstype == "single":
