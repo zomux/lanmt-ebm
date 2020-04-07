@@ -122,7 +122,7 @@ else:
     tgt_corpus = train_tgt_corpus
 
 
-if OPTS.train:
+if OPTS.train or OPTS.all:
     dataset = MTDataset(
         src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
         src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
