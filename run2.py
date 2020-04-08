@@ -275,7 +275,6 @@ if OPTS.train or OPTS.all:
         nmt, dataset, optimizer,
         scheduler=scheduler, multigpu=gpu_num > 1,
         using_horovod=horovod_installed)
-        # using_horovod=False)
     OPTS.trainer = trainer
     print ("TENSORBOARD : ", tb_logdir)
     trainer.configure(
