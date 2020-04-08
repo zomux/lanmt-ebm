@@ -130,7 +130,6 @@ class LANMTModel2(Transformer):
     def compute_length_predictor_loss(self, x_states, x_mask, y_mask):
         """Get the loss for length predictor.
         """
-        # y_lens = y_mask.sum(1) - 1  # TODO(jason) Why -1?? ask raphael
         y_lens = y_mask.sum(1)  # TODO(jason) Why -1?? ask raphael
         x_lens = x_mask.sum(1)
         delta = (y_lens - x_lens + 50.).long().clamp(0, 99)
@@ -145,8 +144,17 @@ class LANMTModel2(Transformer):
         return length_scores
 
     def compute_vae_KL(self, p_prob, q_prob):
-        """Compute KL divergence given two Gaussians.
-        """
+        q_mean, q_stddev = q_prob[..., :self.latent_dim], F.softplus(q_prob[..., self.latent_dim:])
+        p_mean, p_stddev = p_prob[..., :self.latent_dim], F.softplus(p_prob[..., self.latent_dim:])
+
+        kl = 0
+        kl += torch.log(p_stddev + 1e-8) - torch.log(q_stddev + 1e-8)
+        kl += (q_stddev ** 2 + (q_mean - p_mean)**2) / (2 * p_stddev**2)
+        kl -= 0.5
+        kl = kl.sum(-1)
+        return kl
+
+    def compute_vae_KL2(self, p_prob, q_prob):
         mu1 = q_prob[:, :, :self.latent_dim]
         stddev1 = F.softplus(q_prob[:, :, self.latent_dim:])
         mu2 = p_prob[:, :, :self.latent_dim]
@@ -231,10 +239,6 @@ class LANMTModel2(Transformer):
           F.softplus(q_prob[..., self.latent_dim:]))
 
         z_q = q_mean + q_stddev * torch.randn_like(q_stddev)
-        #log_qz = -0.5 * ( (z_q - q_mean) / q_stddev ) ** 2 \
-        #    - torch.log(q_stddev * math.sqrt(2 * math.pi))
-        #log_pz = -0.5 * ( (z_q - p_mean) / p_stddev ) ** 2 \
-        #    - torch.log(p_stddev * math.sqrt(2 * math.pi))
 
         # Compute length prediction loss
         length_scores = self.compute_length_predictor_loss(x_states, x_mask, y_mask)
@@ -272,6 +276,51 @@ class LANMTModel2(Transformer):
             import pdb;pdb.set_trace()
         return score_map
 
+    def measure_ELBO(self, x, y, x_mask=None, x_states=None, p_prob=None):
+        """Measure the ELBO in the inference time."""
+        y_mask = self.to_float(torch.ne(y, 0))
+        batch_size = list(y.shape)[0]
+        y_shape = list(y.shape)
+
+        # Source sentence hidden states, shared between prior, posterior, decoder.
+        if p_prob is None or x_states is None or x_mask is None:
+            x_mask = self.to_float(torch.ne(x, 0))
+            x_states = self.embed_layer(x)
+            x_states = self.x_encoder(x_states, x_mask)
+
+            # Compute p(z|x)
+            pos_states = self.pos_embed_layer(y).expand(y_shape + [self.hidden_size])
+            p_states = self.prior_encoder(pos_states, y_mask, x_states, x_mask)
+            p_prob = self.p_hid2lat(p_states)
+
+        # Compute q(z|x,y)
+        y_states = self.embed_layer(y)
+        q_states = self.q_encoder_xy(y_states, y_mask, x_states, x_mask)
+        q_prob = self.q_hid2lat(q_states)
+        q_mean, q_stddev = (
+          q_prob[..., :self.latent_dim],
+          F.softplus(q_prob[..., self.latent_dim:]))
+
+        likelihood_list = []
+        for _ in range(20):
+            z_q = q_mean + q_stddev * torch.randn_like(q_stddev)
+            hid_q = self.lat2hid(z_q)
+            decoder_states = self.decoder(hid_q, y_mask, x_states, x_mask)
+            logits = self.expander_nn(decoder_states)
+            shape = logits.shape
+            likelihood = - F.cross_entropy(
+                logits.view(-1, shape[-1]),
+                y.view(-1),
+                reduction="sum", ignore_index=0)
+            likelihood = likelihood / y_mask.sum()
+            likelihood_list.append(likelihood)
+
+        kl = self.compute_vae_KL(p_prob, q_prob)
+        kl = (kl * y_mask).sum() / y_mask.sum()
+        mean_likelihood = sum(likelihood_list) / len(likelihood_list)
+        elbo = mean_likelihood - kl
+        return elbo
+
     def translate(self, x, refine_steps=0):
         """ Testing codes.
         """
@@ -288,7 +337,6 @@ class LANMTModel2(Transformer):
         batch_size = list(x_states.shape)[0]
         y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len)
         y_mask = (y_mask < y_lens[:, None])
-        y_mask = y_mask.float()
         # y_mask = x_mask
 
         # Compute p(z|x)

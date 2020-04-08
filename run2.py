@@ -73,6 +73,8 @@ ap.add_argument("--opt_noise", default="none", type=str)
 ap.add_argument("--opt_targets", default="xent", type=str)
 ap.add_argument("--opt_decoder", default="fixed", type=str)
 ap.add_argument("--opt_training_mode", default="energy", type=str)
+ap.add_argument("--opt_imitation", action="store_true")
+ap.add_argument("--opt_imit_rand_steps", default=2, type=int)
 
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
 ap.add_argument("--opt_annealbudget", action="store_true", help="switch of annealing KL budget")
@@ -184,7 +186,8 @@ else:
     tgt_corpus = train_tgt_corpus
 n_valid_samples = 5000 if OPTS.finetune else 500
 if OPTS.train:
-    OPTS.batchtokens = 2048
+    #OPTS.batchtokens = 2048
+    OPTS.batchtokens = 1024
     dataset = MTDataset(
         src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
         src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
@@ -231,16 +234,17 @@ if OPTS.scorenet:
     if torch.cuda.is_available():
         nmt.cuda()
     from lib_score_matching5 import LatentScoreNetwork5
-    #from lib_score_matching4 import LatentScoreNetwork4
     nmt = LatentScoreNetwork5(
-    #nmt = LatentScoreNetwork4(
         nmt,
         hidden_size=OPTS.hiddensz,
         latent_size=OPTS.latentdim,
         noise=OPTS.noise,
         targets=OPTS.targets,
         decoder=OPTS.decoder,
-        training_mode=OPTS.training_mode,)
+        training_mode=OPTS.training_mode,
+        imitation=OPTS.imitation,
+        imit_rand_steps=OPTS.imit_rand_steps,
+    )
 
 # Training
 if OPTS.train or OPTS.all:
@@ -448,7 +452,7 @@ if OPTS.batch_test:
 if OPTS.evaluate or OPTS.all:
     # Post-processing
     if is_root_node():
-        hyp_path = "/tmp/{}_{}_{}.txt".format(OPTS.noise, OPTS.targets, OPTS.training_mode)
+        hyp_path = "/tmp/{}_{}_{}_{}_{}.txt".format(OPTS.noise, OPTS.targets, OPTS.training_mode, OPTS.imitation, OPTS.imit_rand_steps)
         result_path = OPTS.result_path
         with open(hyp_path, "w") as outf:
             for line in open(result_path):

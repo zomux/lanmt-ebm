@@ -17,7 +17,6 @@ sys.path.append(".")
 
 from lib_lanmt_modules import TransformerEncoder
 from lib_lanmt_model2 import LANMTModel2
-from lib_simple_encoders import Convolutional2DEncoder
 from lib_lanmt_modules import TransformerCrossEncoder
 from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
@@ -28,11 +27,13 @@ class LatentScoreNetwork5(Transformer):
 
     def __init__(
         self, lanmt_model, hidden_size=256, latent_size=8,
-        noise=0.1, targets="logpy", decoder="fixed", training_mode="energy", enable_valid_grad=True):
+        noise=0.1, targets="logpy", decoder="fixed", training_mode="energy", imitation=False, imit_rand_steps=1, enable_valid_grad=True):
         """
         Args:
             lanmt_model(LANMTModel)
         """
+        self.imitation = imitation
+        self.imit_rand_steps = imit_rand_steps
         self.training_mode = training_mode
         self._hidden_size = hidden_size
         self._latent_size = latent_size
@@ -47,12 +48,13 @@ class LatentScoreNetwork5(Transformer):
         self.noise = noise
         self.targets = targets
 
-        self.tb_str = "{}_{}_{}_{}".format(targets, decoder, training_mode, noise)
+        self.tb_str = "{}_{}_{}_{}_{}_{}".format(targets, decoder, training_mode, noise, imitation, imit_rand_steps)
         main_dir = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/"
         self._tb= SummaryWriter(
           log_dir="{}/{}".format(main_dir, self.tb_str), flush_secs=10)
 
     def prepare(self):
+        # TODO (jason) replace the final MLP with a ConvNet with pooling (it gave a CuDNN error last time I tried it)
         self.lat2hid = nn.Linear(self._latent_size, self._hidden_size)
         self._encoder = TransformerCrossEncoder(None, self._hidden_size, 3)
         if self.training_mode == "score":
@@ -123,10 +125,12 @@ class LatentScoreNetwork5(Transformer):
             score = score.detach()
             z = z + score * lr
             lr = lr * decay
-        return z.detach()
+        return z
 
-    def compute_targets(self, z, y, y_mask, x_states, x_mask, p_prob):
+    def compute_targets(self, z, y, y_mask, x_states, x_mask, p_mu, p_stddev):
         lanmt = self.nmt()
+        latent_dim = lanmt.latent_dim
+        logpy, logpz, logqz = 0, 0, 0
 
         hid = lanmt.lat2hid(z)
         decoder_states = lanmt.decoder(hid, y_mask, x_states, x_mask)
@@ -135,43 +139,42 @@ class LatentScoreNetwork5(Transformer):
 
         shape = logits.shape
         y_pred = logits.argmax(-1)
+        """
         nll = F.cross_entropy(
           logits.view(shape[0] * shape[1], -1),
           y_pred.view(shape[0] * shape[1]), reduction="none")
-        nll = nll.view(shape[0], shape[1])
-        logpy = -1 * (nll * y_mask).sum(1)
+        """
+        # numerically safer version of softmax
+        logits = logits.view(shape[0] * shape[1], -1) # [bsz * len, vsz]
+        max_logits, _ = logits.max(1, keepdim=True) # [bsz * len, 1]
+        logsumexp = max_logits + torch.logsumexp(logits - max_logits, 1, keepdim=True)
+        logpy = logits - logsumexp
+        logpy = logpy.gather(1, y_pred.view(-1)[:,None])
+        logpy = logpy.view(shape[0], shape[1])
+        logpy = (logpy * y_mask).sum(1)
         logpy = logpy.detach()
 
-        if self.targets == "xent":
-            return logpy
-        elif self.targets == "joint":
-            mu, stddev = p_prob[..., :lanmt.latent_dim], p_prob[..., lanmt.latent_dim:]
-            stddev = F.softplus(stddev)
-            logpz = -0.5 * ( (z - mu) / stddev ) ** 2 - torch.log(stddev * math.sqrt(2 * math.pi))
+        if self.targets == "joint" or self.targets == "elbo":
+            logpz = -0.5 * ( (z - p_mu) / p_stddev ) ** 2 - torch.log(p_stddev * math.sqrt(2 * math.pi))
             logpz = logpz.sum(2)
             logpz = (logpz * y_mask).sum(1)
             logpz = logpz.detach()
-            return logpy + logpz
-        elif self.targets == "elbo":
+
+        if self.targets == "elbo":
             y_states = lanmt.embed_layer(y)
             q_states = lanmt.q_encoder_xy(y_states, y_mask, x_states, x_mask)
             q_prob = lanmt.q_hid2lat(q_states)
-            q_mean, q_stddev = (
-              q_prob[..., :lanmt.latent_dim],
-              F.softplus(q_prob[..., lanmt.latent_dim:]))
+            q_mean, q_stddev = q_prob[..., :latent_dim], F.softplus(q_prob[..., latent_dim:])
 
             logqz = -0.5 * ( (z - q_mean) / q_stddev ) ** 2 - torch.log(q_stddev * math.sqrt(2 * math.pi))
             logqz = logqz.sum(2)
             logqz = (logqz * y_mask).sum(1)
             logqz = logqz.detach()
 
-            mu, stddev = p_prob[..., :lanmt.latent_dim], p_prob[..., lanmt.latent_dim:]
-            stddev = F.softplus(stddev)
-            logpz = -0.5 * ( (z - mu) / stddev ) ** 2 - torch.log(stddev * math.sqrt(2 * math.pi))
-            logpz = logpz.sum(2)
-            logpz = (logpz * y_mask).sum(1)
-            logpz = logpz.detach()
-            return logpy + logpz - logqz
+        #lst = (logpy.mean().item(), logpy.mean().item(), logqz.mean().item())
+        #if any([xx != xx for xx in lst]):
+        #    import ipdb; ipdb.set_trace()
+        return logpy + logpz - logqz
 
     def compute_loss(self, x, x_mask, y, y_mask):
         lanmt = self.nmt()
@@ -187,15 +190,23 @@ class LatentScoreNetwork5(Transformer):
         if self.noise == "rand":
             stddev = stddev * np.random.random_sample()
         z_noise = p_mu + stddev
-        z_clean = p_mu
+        z_clean = p_mu # only used for monitoring, not used for training
 
-        z_d_noise = self.refine(z_noise, y_mask, x_states, x_mask)
+        if self.imitation and self._mycnt >= 2000: # Perform K SGD steps during training
+            n_iter = np.random.randint(1, self.imit_rand_steps)
+            z_noise = self.energy_sgd(z_noise, y_mask, x_states, x_mask, n_iter=n_iter, lr=0.10, decay=1.00)
+            if n_iter > 0:
+                z_noise.requires_grad = True
+
+        z_d_noise = z_noise
+        for idx in range(np.random.randint(1, 2)):
+            z_d_noise = self.refine(z_d_noise, y_mask, x_states, x_mask) # Delta posterior refinement
         z_d_clean = self.refine(z_clean, y_mask, x_states, x_mask)
 
         z_ini, z_fin = z_noise, z_d_noise
         z_diff = (z_fin - z_ini).detach()
 
-        z_sgd = self.energy_sgd(z_clean, y_mask, x_states, x_mask, n_iter=4, lr=0.50, decay=0.50)
+        z_sgd = self.energy_sgd(z_clean, y_mask, x_states, x_mask, n_iter=4, lr=0.10, decay=1.00).detach()
 
         with torch.no_grad():
             targets_ini = self.compute_targets(z_ini, y, y_mask, x_states, x_mask, p_prob)
@@ -210,13 +221,6 @@ class LatentScoreNetwork5(Transformer):
         targets_diff_sgd = (targets_sgd - targets_clean).mean().item()
         self._mycnt += 1
         if self._mycnt % 1 == 0:
-            """
-            energy_diff_sgd_p = self.compute_energy(z_sgd_p, y_mask, x_states, x_mask)\
-                - self.compute_energy(z_noise, y_mask, x_states, x_mask)
-            energy_diff_sgd_p = energy_diff_sgd_p.mean().detach()
-            self._tb_sgd.add_scalar("monitor/energy_diff_p", energy_diff_sgd_p, self._mycnt)
-            """
-
             self._tb.add_scalar("monitor/targets_diff_ref", targets_diff_ref, self._mycnt)
             self._tb.add_scalar("monitor/targets_diff_sgd", targets_diff_sgd, self._mycnt)
 
@@ -226,6 +230,7 @@ class LatentScoreNetwork5(Transformer):
             dummy = torch.ones_like(energy)
             dummy.requires_grad = True
 
+            #import ipdb; ipdb.set_trace()
             grad = autograd.grad(
               energy,
               z_ini,
@@ -263,7 +268,7 @@ class LatentScoreNetwork5(Transformer):
         # y_lens = x_lens
         y_max_len = torch.max(y_lens.long()).item()
         batch_size = list(x_states.shape)[0]
-        y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len)
+        y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len).cuda()
         y_mask = (y_mask < y_lens[:, None])
         y_mask = y_mask.float()
         # y_mask = x_mask
@@ -274,12 +279,7 @@ class LatentScoreNetwork5(Transformer):
         p_states = lanmt.prior_encoder(pos_states, y_mask, x_states, x_mask)
         p_prob = lanmt.p_hid2lat(p_states)
         z = p_prob[..., :lanmt.latent_dim]
-        z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, lr=lr, decay=decay)
-        """
-        _, _, t1 = self.compute_targets(z, y_mask, x_states, x_mask, p_prob)
-        _, _, t2 = self.compute_targets(z_, y_mask, x_states, x_mask, p_prob)
-        print ( "{:.2f} ".format((t2-t1).mean()),  )
-        """
+        z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, lr=lr, decay=decay).detach()
 
         hid = lanmt.lat2hid(z_)
         decoder_states = lanmt.decoder(hid, y_mask, x_states, x_mask)
