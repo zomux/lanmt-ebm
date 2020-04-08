@@ -40,6 +40,10 @@ PRETRAINED_MODEL_MAP = {
 TRAINING_MAX_TOKENS = 60
 
 # Shu paths
+DATA_ROOT = "{}/data/wmt_ende_fair".format(os.getenv("HOME"))
+envswitch.register(
+    "shu", "data_root", "{}/data/wmt14_ende_fair".format(os.getenv("HOME"))
+)
 envswitch.register(
     "shu", "lanmt_path",
     os.path.join(os.getenv("HOME"),
