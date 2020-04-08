@@ -5,6 +5,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from nmtlab.utils import OPTS
 import socket
 
 class EnvSwitcher(object):
@@ -31,4 +32,7 @@ class EnvSwitcher(object):
         else:
             return default
 
-envswitch = EnvSwitcher()
+
+if "envswitch" not in OPTS:
+    OPTS.envswitch = EnvSwitcher()
+envswitch = OPTS.envswitch
