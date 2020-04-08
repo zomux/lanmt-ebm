@@ -39,6 +39,13 @@ PRETRAINED_MODEL_MAP = {
 }
 TRAINING_MAX_TOKENS = 60
 
+# Shu paths
+envswitch.register(
+    "shu", "lanmt_path",
+    os.path.join(os.getenv("HOME"),
+    "data/wmt14_ende_fair/lanmt_annealbudget_beginanneal-20000_distill_dtok-wmt14_fair_ende_fastanneal_finetune_fixbug1_fixbug2_klbudget-10.0_x3longertrain_zeroprior.pt")
+)
+
 ap = ArgumentParser()
 ap.add_argument("--root", type=str, default=DATA_ROOT)
 ap.add_argument("--resume", action="store_true")
