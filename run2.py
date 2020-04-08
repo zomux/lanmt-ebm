@@ -121,8 +121,7 @@ OPTS.result_path = OPTS.result_path.replace(DATA_ROOT, OPTS.root)
 horovod_installed = importlib.util.find_spec("horovod") is not None
 if envswitch.who() != "shu":
     horovod_installed = False
-    
-if False and torch.cuda.is_available() and horovod_installed:
+if torch.cuda.is_available() and horovod_installed:
     import horovod.torch as hvd
     hvd.init()
     torch.cuda.set_device(hvd.local_rank())
