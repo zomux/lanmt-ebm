@@ -37,16 +37,16 @@ TRAINING_MAX_TOKENS = 60
 
 ap = ArgumentParser()
 ap.add_argument("--root", type=str, default=DATA_ROOT)
-ap.add_argument("--resume", action="store_true")
+ap.add_argument("--all", action="store_true")
 ap.add_argument("--test", action="store_true")
 ap.add_argument("--train", action="store_true")
 ap.add_argument("--evaluate", action="store_true")
 ap.add_argument("-tb", "--tensorboard", action="store_true")
-ap.add_argument("--opt_dtok", default="", type=str, help="dataset token")
+ap.add_argument("--opt_dtok", default="wmt14_fair_ende", type=str, help="dataset token")
 ap.add_argument("--opt_seed", type=int, default=3, help="random seed")
 
 # Commmon option for both autoregressive and non-autoregressive models
-ap.add_argument("--opt_batchtokens", type=int, default=4096)
+ap.add_argument("--opt_batchtokens", type=int, default=8192)
 ap.add_argument("--opt_hiddensz", type=int, default=512)
 ap.add_argument("--opt_embedsz", type=int, default=512)
 ap.add_argument("--opt_heads", type=int, default=8)
@@ -60,13 +60,16 @@ ap.add_argument("--opt_distill", action="store_true", help="train with knowledge
 
 # Options for LM
 ap.add_argument("--opt_corruption", type=str, default="target")
+ap.add_argument("--opt_corrupt", type=float, default=0.2)
 ap.add_argument("--opt_losstype", type=str, default="single")
 ap.add_argument("--opt_modeltype", type=str, default="fakegrad")
 ap.add_argument("--opt_enctype", type=str, default="conv")
 ap.add_argument("--opt_dectype", type=str, default="conv")
 ap.add_argument("--opt_ebmtype", type=str, default="conv")
 ap.add_argument("--opt_nrefine", type=int, default=1)
+ap.add_argument("--opt_epochs", type=int, default=20)
 
+ap.add_argument("--opt_Tbaseline", action="store_true")
 
 # Paths
 ap.add_argument("--model_path",
@@ -75,8 +78,8 @@ ap.add_argument("--result_path",
                 default="{}/indp_mt.result".format(DATA_ROOT))
 OPTS.parse(ap)
 
-OPTS.fix_bug1 = True
-OPTS.fix_bug2 = True
+OPTS.fixbug1 = True
+OPTS.fixbug2 = True
 OPTS.model_path = OPTS.model_path.replace(DATA_ROOT, OPTS.root)
 OPTS.result_path = OPTS.result_path.replace(DATA_ROOT, OPTS.root)
 
@@ -120,7 +123,7 @@ else:
     tgt_corpus = train_tgt_corpus
 
 
-if OPTS.train:
+if OPTS.train or OPTS.all:
     dataset = MTDataset(
         src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
         src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
@@ -146,7 +149,7 @@ nmt = IndependentEnergyMT(latent_size=OPTS.latentdim)
 # Training
 if OPTS.train or OPTS.all:
     # Training code
-    scheduler = SimpleScheduler(max_epoch=20)
+    scheduler = SimpleScheduler(max_epoch=OPTS.epochs)
     # scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
     lr = 0.0001 * gpu_num / 8
     optimizer = optim.Adam(nmt.parameters(), lr=lr, betas=(0.9, 0.98), eps=1e-4)
@@ -164,8 +167,6 @@ if OPTS.train or OPTS.all:
         save_optim_state=False
         # clip_norm=0.1 if OPTS.scorenet else 0
     )
-    if OPTS.resume:
-        trainer.load()
     trains_stop_stdout_monitor()
     trainer.run()
     trains_restore_stdout_monitor()
@@ -199,6 +200,7 @@ if OPTS.test or OPTS.all:
     lanmt = LANMTModel(**lanmt_options)
     lanmt.load(os.path.join(OPTS.root,
                             "lanmt_annealbudget_beginanneal-20000_distill_dtok-wmt14_fair_ende_fastanneal_finetune_fixbug1_fixbug2_klbudget-10.0_x3longertrain_zeroprior.pt"))
+    lanmt.train(False)
     if torch.cuda.is_available():
         lanmt.cuda()
 
@@ -220,10 +222,14 @@ if OPTS.test or OPTS.all:
                 if torch.cuda.is_available():
                     z = z.cuda()
                 latent = lanmt.latent2vector_nn(z)
-                targets, _, _ = lanmt.translate(x, latent=latent, prior_states=prior_states)
+                targets, _, _ = lanmt.translate(x)
                 target_tokens = targets.cpu().numpy()[0].tolist()
             # EBM refinement
-            # target_tokens = tokens.cpu().numpy()[0].tolist()
+            if not OPTS.Tbaseline:
+                target_mask = torch.ne(targets, 0).float()
+                logits = nmt.compute_logits(x, mask, targets, target_mask)
+                targets = logits.argmax(2)
+                target_tokens = targets.cpu().numpy()[0].tolist()
             # Convert token IDs back to words
             target_tokens = [t for t in target_tokens if t > 2]
             target_words = tgt_vocab.decode(target_tokens)
@@ -236,6 +242,8 @@ if OPTS.test or OPTS.all:
 
 if OPTS.evaluate or OPTS.all:
     from nmtlab.evaluation.sacre_bleu import SacreBLEUEvaluator
+    from tensorboardX import SummaryWriter
+    tb = SummaryWriter(log_dir=tb_logdir, comment="nmtlab")
     # Post-processing
     if is_root_node():
         hyp_path = "/tmp/namt_hyp.txt"
@@ -269,5 +277,6 @@ if OPTS.evaluate or OPTS.all:
             evaluator = MosesBLEUEvaluator(ref_path=ref_path)
         bleu = evaluator.evaluate(hyp_path)
         print("BLEU =", bleu)
+        tb.add_scalar("BLEU", bleu)
 
 
