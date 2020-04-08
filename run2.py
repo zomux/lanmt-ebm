@@ -47,8 +47,9 @@ envswitch.register(
 DATA_ROOT = envswitch.load("data_root", default=DATA_ROOT)
 envswitch.register(
     "shu", "lanmt_path",
-    os.path.join(os.getenv("HOME"),
-    "lanmt_annealbudget_beginanneal-20000_distill_dtok-wmt14_fair_ende_fastanneal_finetune_fixbug1_fixbug2_klbudget-10.0_x3longertrain_zeroprior.pt")
+    os.path.join(DATA_ROOT,
+        "lanmt_annealbudget_beginanneal-20000_distill_dtok-wmt14_fair_ende_fastanneal_finetune_fixbug1_fixbug2_klbudget-10.0_x3longertrain_zeroprior.pt"
+    )
 )
 
 ap = ArgumentParser()
