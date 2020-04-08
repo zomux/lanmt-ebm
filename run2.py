@@ -186,8 +186,7 @@ else:
     tgt_corpus = train_tgt_corpus
 n_valid_samples = 5000 if OPTS.finetune else 500
 if OPTS.train:
-    #OPTS.batchtokens = 2048
-    OPTS.batchtokens = 1024
+    OPTS.batchtokens = 2048
     dataset = MTDataset(
         src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
         src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
