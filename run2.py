@@ -237,6 +237,7 @@ if OPTS.scorenet:
     #lanmt_model_path = lanmt_model_path.replace("_noise-0.3", "")
     lanmt_model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
     #lanmt_model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_finetune_tied.pt"
+    lanmt_model_path = envswitch.load("lanmt_path", lanmt_model_path)
     assert os.path.exists(lanmt_model_path)
     nmt.load(lanmt_model_path)
     print ("Successfully loaded LANMT: {}".format(lanmt_model_path))
