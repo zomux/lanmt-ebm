@@ -13,5 +13,5 @@ class EnvSwitcher(object):
         self.var_map = {} # name, key -> val
 
     def who(self):
-        
+        hostname = socket.gethostname()
         if "abci"
