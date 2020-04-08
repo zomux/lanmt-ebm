@@ -130,6 +130,11 @@ OPTS.parse(ap)
 OPTS.model_path = OPTS.model_path.replace(DATA_ROOT, OPTS.root)
 OPTS.result_path = OPTS.result_path.replace(DATA_ROOT, OPTS.root)
 
+if envswitch.who() == "shu":
+    OPTS.model_path = os.path.join(DATA_ROOT, os.path.basename(OPTS.model_path))
+    OPTS.result_path = os.path.join(DATA_ROOT, os.path.basename(OPTS.result_path))
+
+
 # Determine the number of GPUs to use
 horovod_installed = importlib.util.find_spec("horovod") is not None
 if envswitch.who() != "shu":
