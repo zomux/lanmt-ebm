@@ -118,7 +118,7 @@ OPTS.model_path = OPTS.model_path.replace(DATA_ROOT, OPTS.root)
 OPTS.result_path = OPTS.result_path.replace(DATA_ROOT, OPTS.root)
 
 # Determine the number of GPUs to use
-# horovod_installed = importlib.util.find_spec("horovod") is not None
+horovod_installed = importlib.util.find_spec("horovod") is not None
 if False and torch.cuda.is_available() and horovod_installed:
     import horovod.torch as hvd
     hvd.init()

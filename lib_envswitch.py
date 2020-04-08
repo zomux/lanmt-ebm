@@ -30,3 +30,5 @@ class EnvSwitcher(object):
             return self.var_map[(owner, key)]
         else:
             return default
+
+envswitch = EnvSwitcher()
