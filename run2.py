@@ -29,6 +29,7 @@ from argparse import ArgumentParser
 
 from lib_lanmt_model2 import LANMTModel2
 from lib_rescoring import load_rescoring_transformer
+from lib_envswitch import EnvSwitcher
 from datasets import get_dataset_paths
 
 DATA_ROOT = "/misc/vlgscratch4/ChoGroup/jason/corpora/iwslt/iwslt16_ende"

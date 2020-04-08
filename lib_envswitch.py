@@ -14,4 +14,19 @@ class EnvSwitcher(object):
 
     def who(self):
         hostname = socket.gethostname()
-        if "abci"
+        if "abci" in hostname:
+            return "shu"
+        else:
+            return "jason"
+
+    def register(self, owner, key, val):
+        self.var_map[(owner, key)] = val
+
+    def load(self, key, default=None):
+        # Load registered val for current owner
+        # If not found, return default val
+        owner = self.who()
+        if (owner, key) in self.var_map:
+            return self.var_map[(owner, key)]
+        else:
+            return default
