@@ -5,9 +5,13 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import socket
+
 class EnvSwitcher(object):
 
     def __init__(self):
-        self.var_map = {}
+        self.var_map = {} # name, key -> val
 
-    def 
+    def who(self):
+        
+        if "abci"
