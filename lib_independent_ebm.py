@@ -76,7 +76,7 @@ class IndependentEnergyMT(Transformer):
         self.x_encoder = ConvolutionalEncoder(self.x_embed, self._latent_size, 3)
         if OPTS.modeltype == "realgrad":
             self.latent2energy = nn.Sequential(
-                nn.Linear(self._hidden_size, self.hidden_size // 2),
+                nn.Linear(self._hidden_size, self._hidden_size // 2),
                 nn.ReLU(),
                 nn.Linear(self._hidden_size // 2, 1)
             )
@@ -84,17 +84,15 @@ class IndependentEnergyMT(Transformer):
     def compute_energy(self, z, y_mask, x_states, x_mask):
         if y_mask is not None:
             y_mask = y_mask.float()
-        if OPTS.modeltype != "realgrad":
-            if OPTS.ebmtype.startswith("cross"):
-                grad = self.ebm(z, y_mask, x_states, x_mask)
-            else:
-                grad = self.ebm(z, y_mask)
-            energy = None
+        energy = None
+        if OPTS.ebmtype.startswith("cross"):
+            grad = self.ebm(z, y_mask, x_states, x_mask)
         else:
-            raise NotImplementedError
-            energy = self._hidden2energy(z)
+            grad = self.ebm(z, y_mask)
+        if OPTS.modeltype == "realgrad":
+            energy = self.latent2energy(grad)
             mean_energy = ((energy.squeeze(2) * y_mask).sum(1) / y_mask.sum(1)).mean()
-            grad = torch.autograd.grad(mean_energy, z, create_graph=True)[0]
+            grad = torch.autograd.grad(mean_energy, grad, create_graph=True)[0]
         return energy, grad
 
     def compute_logits(self, x, x_mask, noise_y, y_mask):
@@ -110,7 +108,7 @@ class IndependentEnergyMT(Transformer):
         else:
             noise_z = self.encoder(noise_y_embed, mask=y_mask)
         # Compute energy model and refine the noise_z
-        if OPTS.modeltype == "fakegrad":
+        if OPTS.modeltype == "fakegrad" or OPTS.modeltype == "realgrad":
             refined_z = noise_z
             for _ in range(OPTS.nrefine):
                 energy, energy_grad = self.compute_energy(refined_z, y_mask, x_states, x_mask)

@@ -190,3 +190,30 @@ class ConvolutionalCrossEncoder(nn.Module):
             if self.skip_connect:
                 x = self._rescale * (first_x + x)
         return x
+
+if __name__ == '__main__':
+    import torch.nn.functional as F
+    # Test double grad for convolution
+    embed_layer = nn.Embedding(100, 256)
+    conv_layer = nn.Conv1d(256, 256, 3, padding=1)
+    linear_layer = nn.Linear(256, 100)
+    energy_layer = nn.Linear(256, 1)
+    embed_layer.cuda()
+    conv_layer.cuda()
+    linear_layer.cuda()
+    energy_layer.cuda()
+    x = torch.randint(100, (1, 10)).cuda()
+    print("x=", x)
+    embed = embed_layer(x)
+    states = conv_layer(embed.transpose(1,2)).transpose(1,2)
+    energy = energy_layer(states).mean()
+    grad = torch.autograd.grad(
+        energy,
+        embed,
+        create_graph=True
+    )[0]
+    new_states = embed + grad
+    logits = linear_layer(new_states)
+    loss = F.cross_entropy(logits.squeeze(0), x.flatten())
+    loss.backward()
+    print("loss=", loss)

@@ -48,7 +48,7 @@ DATA_ROOT = envswitch.load("data_root", default=DATA_ROOT)
 envswitch.register(
     "shu", "lanmt_path",
     os.path.join(DATA_ROOT,
-        "lanmt_annealbudget_beginanneal-20000_distill_dtok-wmt14_fair_ende_fastanneal_finetune_fixbug1_fixbug2_klbudget-10.0_x3longertrain_zeroprior.pt"
+        "lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt14_fair_ende_fastanneal_longertrain.pt"
     )
 )
 
@@ -89,6 +89,10 @@ ap.add_argument("--opt_decoder", default="fixed", type=str)
 ap.add_argument("--opt_training_mode", default="energy", type=str)
 ap.add_argument("--opt_imitation", action="store_true")
 ap.add_argument("--opt_imit_rand_steps", default=2, type=int)
+ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
+
+# Decoding options
+ap.add_argument("--opt_Twithout_ebm", action="store_true", help="without using EBM")
 
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
 ap.add_argument("--opt_annealbudget", action="store_true", help="switch of annealing KL budget")
@@ -133,6 +137,8 @@ OPTS.result_path = OPTS.result_path.replace(DATA_ROOT, OPTS.root)
 if envswitch.who() == "shu":
     OPTS.model_path = os.path.join(DATA_ROOT, os.path.basename(OPTS.model_path))
     OPTS.result_path = os.path.join(DATA_ROOT, os.path.basename(OPTS.result_path))
+    OPTS.fixbug1 = True
+    OPTS.fixbug2 = True
 
 
 # Determine the number of GPUs to use
@@ -159,7 +165,9 @@ if is_root_node():
     if OPTS.tensorboard:
         try:
             from trains import Task
-            task = Task.init(project_name="lanmt", task_name=OPTS.result_tag, auto_connect_arg_parser=False)
+            task = Task.init(
+                project_name="lanmt2", task_name=OPTS.result_tag, auto_connect_arg_parser=False,
+                output_uri=OPTS.root)
             task.connect(ap)
             task.set_random_seed(OPTS.seed)
             task.set_output_model_id(OPTS.model_tag)
@@ -207,7 +215,8 @@ else:
     tgt_corpus = train_tgt_corpus
 n_valid_samples = 5000 if OPTS.finetune else 500
 if OPTS.train:
-    OPTS.batchtokens = 2048
+    if envswitch.who() != "shu":
+        OPTS.batchtokens = 2048
     dataset = MTDataset(
         src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
         src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
@@ -251,7 +260,8 @@ if OPTS.scorenet:
     lanmt_model_path = envswitch.load("lanmt_path", lanmt_model_path)
     assert os.path.exists(lanmt_model_path)
     nmt.load(lanmt_model_path)
-    print ("Successfully loaded LANMT: {}".format(lanmt_model_path))
+    if is_root_node():
+        print ("Successfully loaded LANMT: {}".format(lanmt_model_path))
     if torch.cuda.is_available():
         nmt.cuda()
     from lib_score_matching5 import LatentScoreNetwork5
@@ -275,7 +285,7 @@ if OPTS.train or OPTS.all:
         scheduler = SimpleScheduler(max_epoch=1)
     elif OPTS.scorenet:
         n_valid_per_epoch = 10
-        scheduler = SimpleScheduler(max_epoch=20)
+        scheduler = SimpleScheduler(max_epoch=1 if envswitch.who() == "shu" else 20)
     else:
         scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
     if OPTS.scorenet and False:
@@ -293,7 +303,7 @@ if OPTS.train or OPTS.all:
         n_valid_per_epoch=n_valid_per_epoch,
         criteria="loss",
         tensorboard_logdir=tb_logdir,
-        # clip_norm=0.1 if OPTS.scorenet else 0
+        clip_norm=1 if OPTS.clipnorm else 0
     )
     # if OPTS.fp16:
     #     from apex import amp
@@ -367,7 +377,7 @@ if OPTS.test or OPTS.all:
             start_time = time.time()
             # with torch.no_grad() if not OPTS.scorenet else nullcontext():
                 # Predict latent and target words from prior
-            targets = scorenet.translate(x, n_iter=4, lr=0.5)
+            targets = scorenet.translate(x, n_iter=4, lr=0.5, decay=1.)
             target_tokens = targets.cpu().numpy()[0].tolist()
             if targets is None:
                 target_tokens = [2, 2, 2]
@@ -384,89 +394,6 @@ if OPTS.test or OPTS.all:
     sys.stdout.write("\n")
     trains_restore_stdout_monitor()
     print("Average decoding time: {:.0f}ms, std: {:.0f}".format(np.mean(decode_times), np.std(decode_times)))
-
-# Translate multiple sentences in batch
-if OPTS.batch_test:
-    # Translate using only one GPU
-    if not is_root_node():
-        sys.exit()
-    torch.manual_seed(OPTS.seed)
-    if OPTS.Tlatent_search:
-        print("--opt_Tlatent_search is not supported in batch test mode right now. Try to implement it.")
-    # Load trained model
-    if OPTS.use_pretrain:
-        if OPTS.dtok not in PRETRAINED_MODEL_MAP:
-            print("The model for {} doesn't exist".format(OPTS.dtok))
-        model_path = PRETRAINED_MODEL_MAP[OPTS.dtok]
-        print("loading pretrained model in {}".format(model_path))
-        OPTS.result_path = OPTS.result_path.replace("lanmt_", "lanmt_pretrain_")
-    else:
-        model_path = OPTS.model_path
-    if not os.path.exists(model_path):
-        print("Cannot find model in {}".format(model_path))
-        sys.exit()
-    nmt.load(model_path)
-    print ("Successfully loaded EBM: {}".format(model_path))
-    if torch.cuda.is_available():
-        nmt.cuda()
-    nmt.train(False)
-    if OPTS.scorenet:
-        scorenet = nmt
-        OPTS.scorenet = scorenet
-        scorenet.train(False)
-        nmt = scorenet.nmt()
-        nmt.train(False)
-    src_vocab = Vocab(src_vocab_path)
-    tgt_vocab = Vocab(tgt_vocab_path)
-    result_path = OPTS.result_path
-    # Read data
-    batch_test_size = OPTS.Tbatch_size
-    lines = open(test_src_corpus).readlines()
-    sorted_line_ids = np.argsort([len(l.split()) for l in lines])
-    start_time = time.time()
-    output_tokens = []
-    i = 0
-    while i < len(lines):
-        # Make a batch
-        batch_lines = []
-        max_len = 0
-        while len(batch_lines) * max_len < OPTS.Tbatch_size:
-            line_id = sorted_line_ids[i]
-            line = lines[line_id]
-            length = len(line.split())
-            batch_lines.append(line)
-            if length > max_len:
-                max_len = length
-            i += 1
-            if i >= len(lines):
-                break
-        x = np.zeros((len(batch_lines), max_len + 2), dtype="long")
-        for j, line in enumerate(batch_lines):
-            tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
-            x[j, :len(tokens)] = tokens
-        x = torch.tensor(x)
-        if torch.cuda.is_available():
-            x = x.cuda()
-        targets = scorenet.translate(x, n_iter=4, lr=0.1, decay=1.0)
-        target_tokens = targets.cpu().numpy().tolist()
-        output_tokens.extend(target_tokens)
-        sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
-        sys.stdout.flush()
-
-    with open(OPTS.result_path, "w") as outf:
-        # Record decoding time
-        end_time = time.time()
-        decode_time = (end_time - start_time)
-        # Convert token IDs back to words
-        id_token_pairs = list(zip(sorted_line_ids, output_tokens))
-        id_token_pairs.sort()
-        for _, target_tokens in id_token_pairs:
-            target_tokens = [t for t in target_tokens if t > 2]
-            target_words = tgt_vocab.decode(target_tokens)
-            target_sent = " ".join(target_words)
-            outf.write(target_sent + "\n")
-    sys.stdout.write("\n")
-    print("Batch decoding time: {:.2f}s".format(decode_time))
 
 # Evaluation of translaton quality
 if OPTS.evaluate or OPTS.all:
@@ -494,14 +421,18 @@ if OPTS.evaluate or OPTS.all:
                     line = line.replace("▁", " ").strip() + "\n"
                 outf.write(line)
         # Get BLEU score
-        if "wmt" in OPTS.dtok or "iwslt" in OPTS.dtok:
+        if "iwslt" in OPTS.dtok:
             evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
-        #if "wmt" in OPTS.dtok:
-        #    script = "{}/scripts/detokenize.perl".format(os.path.dirname(__file__))
-        #    os.system("perl {} < {} > {}.detok".format(script, hyp_path, hyp_path))
-        #    hyp_path = hyp_path + ".detok"
-        #    evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
+        elif "wmt" in OPTS.dtok:
+           script = "{}/scripts/detokenize.perl".format(os.path.dirname(__file__))
+           os.system("perl {} < {} > {}.detok".format(script, hyp_path, hyp_path))
+           hyp_path = hyp_path + ".detok"
+           evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
         else:
             evaluator = MosesBLEUEvaluator(ref_path=ref_path)
         bleu = evaluator.evaluate(hyp_path)
         print("BLEU =", bleu)
+        if envswitch.who() == "shu":
+            from tensorboardX import SummaryWriter
+            tb = SummaryWriter(log_dir=tb_logdir, comment="nmtlab")
+            tb.add_scalar("BLEU", bleu)

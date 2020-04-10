@@ -12,16 +12,19 @@ from torch import autograd
 
 import numpy as np
 import math
+import os
 import sys
 sys.path.append(".")
 
 from lib_lanmt_modules import TransformerEncoder
 from lib_lanmt_model2 import LANMTModel2
 from lib_lanmt_modules import TransformerCrossEncoder
+from lib_simple_encoders import ConvolutionalCrossEncoder
 from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
 
 from tensorboardX import SummaryWriter
+from lib_envswitch import envswitch
 
 class LatentScoreNetwork5(Transformer):
 
@@ -49,14 +52,19 @@ class LatentScoreNetwork5(Transformer):
         self.targets = targets
 
         self.tb_str = "{}_{}_{}_{}_{}_{}".format(targets, decoder, training_mode, noise, imitation, imit_rand_steps)
-        main_dir = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/"
+        if envswitch.who() == "shu":
+            main_dir = "{}/data/wmt14_ende_fair/tensorboard".format(os.getenv("HOME"))
+        else:
+            main_dir = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/"
+
         self._tb= SummaryWriter(
           log_dir="{}/{}".format(main_dir, self.tb_str), flush_secs=10)
 
     def prepare(self):
         # TODO (jason) replace the final MLP with a ConvNet with pooling (it gave a CuDNN error last time I tried it)
         self.lat2hid = nn.Linear(self._latent_size, self._hidden_size)
-        self._encoder = TransformerCrossEncoder(None, self._hidden_size, 3)
+        # self._encoder = TransformerCrossEncoder(None, self._hidden_size, 3)
+        self._encoder = ConvolutionalCrossEncoder(None, self._hidden_size, 3)
         if self.training_mode == "score":
             self.hid2lat = nn.Linear(self._hidden_size, self._latent_size)
         if self.training_mode == "energy":
@@ -209,13 +217,13 @@ class LatentScoreNetwork5(Transformer):
         z_sgd = self.energy_sgd(z_clean, y_mask, x_states, x_mask, n_iter=4, lr=0.10, decay=1.00).detach()
 
         with torch.no_grad():
-            targets_ini = self.compute_targets(z_ini, y, y_mask, x_states, x_mask, p_prob)
-            targets_fin = self.compute_targets(z_fin, y, y_mask, x_states, x_mask, p_prob)
+            targets_ini = self.compute_targets(z_ini, y, y_mask, x_states, x_mask, p_mu, p_stddev)
+            targets_fin = self.compute_targets(z_fin, y, y_mask, x_states, x_mask, p_mu, p_stddev)
 
-            targets_clean = self.compute_targets(z_clean, y, y_mask, x_states, x_mask, p_prob)
-            targets_d_clean = self.compute_targets(z_d_clean, y, y_mask, x_states, x_mask, p_prob)
+            targets_clean = self.compute_targets(z_clean, y, y_mask, x_states, x_mask, p_mu, p_stddev)
+            targets_d_clean = self.compute_targets(z_d_clean, y, y_mask, x_states, x_mask, p_mu, p_stddev)
 
-            targets_sgd = self.compute_targets(z_sgd, y, y_mask, x_states, x_mask, p_prob)
+            targets_sgd = self.compute_targets(z_sgd, y, y_mask, x_states, x_mask, p_mu, p_stddev)
 
         targets_diff_ref = (targets_d_clean - targets_clean).mean().item()
         targets_diff_sgd = (targets_sgd - targets_clean).mean().item()
@@ -279,7 +287,10 @@ class LatentScoreNetwork5(Transformer):
         p_states = lanmt.prior_encoder(pos_states, y_mask, x_states, x_mask)
         p_prob = lanmt.p_hid2lat(p_states)
         z = p_prob[..., :lanmt.latent_dim]
-        z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, lr=lr, decay=decay).detach()
+        if OPTS.Twithout_ebm:
+            z_ = z
+        else:
+            z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, lr=lr, decay=decay).detach()
 
         hid = lanmt.lat2hid(z_)
         decoder_states = lanmt.decoder(hid, y_mask, x_states, x_mask)

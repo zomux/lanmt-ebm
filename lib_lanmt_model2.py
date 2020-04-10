@@ -29,6 +29,8 @@ from nmtlab.utils import smoothed_bleu
 from lib_lanmt_modules import TransformerEncoder
 from lib_lanmt_modules import TransformerCrossEncoder
 
+from lib_envswitch import envswitch
+
 
 class LANMTModel2(Transformer):
 
@@ -113,6 +115,8 @@ class LANMTModel2(Transformer):
             return x @ torch.transpose(embed_layer.weight, 0, 1) + final_bias
 
         self.expander_nn = FinalLinear()
+        if envswitch.who() == "shu":
+            self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
         # NOTE forced tying
         # if True or self.tied:
         #  self.expander_nn.weight = self.embed_layer.weight
@@ -180,7 +184,10 @@ class LANMTModel2(Transformer):
         budget_upperbound = self.KL_budget
         if self.budget_annealing:
             step = OPTS.trainer.global_step()
-            half_maxsteps = float(self.max_train_steps / 2)
+            if OPTS.fastanneal:
+                half_maxsteps = min(int(self.max_train_steps / 2), 50000) / 2
+            else:
+                half_maxsteps = float(self.max_train_steps / 2)
             if step > half_maxsteps:
                 rate = (float(step) - half_maxsteps) / half_maxsteps
                 min_budget = 0.
