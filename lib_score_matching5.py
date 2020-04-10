@@ -93,12 +93,34 @@ class LatentScoreNetwork5(Transformer):
             dummy = torch.ones_like(energy)
             dummy.requires_grad = True
 
-            grad = autograd.grad(energy, z, create_graph=True, grad_outputs=dummy)
-            #z = z.detach()
-            #score = grad[0].detach()
-            score = grad[0]
+            grad = autograd.grad(energy, z, create_graph=False, grad_outputs=dummy)
+            score = grad[0].detach()
             z = z + score * lr
             lr = lr * decay
+        return z
+
+    def energy_line_search(self, z, y, y_mask, x_states, x_mask, p_prob, n_iter, c=0.5, tau=0.5):
+        # z : [bsz, y_length, lat_size]
+        while True:
+            for idx in range(n_iter):
+                z_ini = z
+                targets_ini = self.compute_targets(z_ini, y, y_mask, x_states, x_mask, p_prob)
+                z.requires_grad = True
+                energy = self.compute_energy(z, y_mask, x_states, x_mask)
+                dummy = torch.ones_like(energy)
+                dummy.requires_grad = True
+                grad = autograd.grad(energy, z, create_graph=False, grad_outputs=dummy)
+                score = grad[0].detach()
+
+                while True:
+                    alpha = 1.0
+                    z_fin = z_ini + score * alpha
+                    targets_fin = self.compute_targets(z_fin, y, y_mask, x_states, x_mask, p_prob)
+                    diff = targets_fin - targets_ini
+                    if diff >= alpha * c:
+                        z = z_fin
+                        break
+                    alpha *= tau
         return z
 
     def compute_targets(self, z, y, y_mask, x_states, x_mask, p_prob):
@@ -171,7 +193,7 @@ class LatentScoreNetwork5(Transformer):
 
         z_d_noise = z_noise
         for idx in range(np.random.randint(1, 2)):
-            z_d_noise = self.delta_refine(z_d_noise, y_mask, x_states, x_mask) # Delta posterior refinement
+            z_d_noise = self.delta_refine(z_d_noise, y_mask, x_states, x_mask)
         z_d_clean = self.delta_refine(z_clean, y_mask, x_states, x_mask)
 
         z_ini, z_fin = z_noise, z_d_noise
@@ -201,12 +223,7 @@ class LatentScoreNetwork5(Transformer):
         dummy.requires_grad = True
 
         #import ipdb; ipdb.set_trace()
-        grad = autograd.grad(
-          energy,
-          z_ini,
-          create_graph=True,
-          grad_outputs=dummy
-        )
+        grad = autograd.grad(energy, z_ini, create_graph=True, grad_outputs=dummy)
         score = grad[0]
 
         score_match_loss = ( ( (score * z_diff) * y_mask[:, :, None] ).sum(2).sum(1) - (targets_diff) )**2
