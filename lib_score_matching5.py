@@ -12,16 +12,19 @@ from torch import autograd
 
 import numpy as np
 import math
+import os
 import sys
 sys.path.append(".")
 
 from lib_lanmt_modules import TransformerEncoder
 from lib_lanmt_model2 import LANMTModel2
 from lib_lanmt_modules import TransformerCrossEncoder
+from lib_simple_encoders import ConvolutionalCrossEncoder
 from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
 
 from tensorboardX import SummaryWriter
+from lib_envswitch import envswitch
 
 class LatentScoreNetwork5(Transformer):
 
@@ -49,7 +52,11 @@ class LatentScoreNetwork5(Transformer):
         self.line_search_c = line_search_c
 
         self.tb_str = "{}_{}_{}_{}_{}_{}".format(targets, decoder, noise, imitation, line_search_c, imit_rand_steps)
-        main_dir = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/"
+        if envswitch.who() == "shu":
+            main_dir = "{}/data/wmt14_ende_fair/tensorboard".format(os.getenv("HOME"))
+        else:
+            main_dir = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/"
+
         self._tb= SummaryWriter(
           log_dir="{}/{}".format(main_dir, self.tb_str), flush_secs=10)
 
@@ -289,7 +296,10 @@ class LatentScoreNetwork5(Transformer):
         p_states = lanmt.prior_encoder(pos_states, y_mask, x_states, x_mask)
         p_prob = lanmt.p_hid2lat(p_states)
         z = p_prob[..., :lanmt.latent_dim]
-        z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, lr=lr, decay=decay).detach()
+        if OPTS.Twithout_ebm:
+            z_ = z
+        else:
+            z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, lr=lr, decay=decay).detach()
 
         hid = lanmt.lat2hid(z_)
         decoder_states = lanmt.decoder(hid, y_mask, x_states, x_mask)
