@@ -245,8 +245,9 @@ class LatentScoreNetwork5(Transformer):
 
         if not self.training:
         #if self._mycnt % 50 == 0:
-            z_clean = p_mean # only used for monitoring, not used for training
-            z_d_clean = self.delta_refine(z_clean, y_mask, x_states, x_mask)
+            with torch.no_grad():
+                z_clean = p_mean # only used for monitoring, not used for training
+                z_d_clean = self.delta_refine(z_clean, y_mask, x_states, x_mask)
             #z_sgd = self.energy_sgd(z_clean, y_mask, x_states, x_mask, n_iter=2, lr=0.10, decay=1.00).detach()
             z_sgd = self.energy_line_search(
                 z_clean, y_mask, x_states, x_mask, p_prob, n_iter=20, c=self.line_search_c).detach()

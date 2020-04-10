@@ -220,7 +220,7 @@ if OPTS.distill:
     tgt_corpus = distilled_tgt_corpus
 else:
     tgt_corpus = train_tgt_corpus
-n_valid_samples = 5000 if OPTS.finetune else 5000
+n_valid_samples = 5000 if OPTS.finetune else 500
 if OPTS.train:
     if envswitch.who() != "shu":
         OPTS.batchtokens = 1024
