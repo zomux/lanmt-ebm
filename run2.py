@@ -83,7 +83,7 @@ ap.add_argument("--opt_priorl", type=int, default=6, help="layers for each z enc
 ap.add_argument("--opt_decoderl", type=int, default=6, help="number of decoder layers")
 ap.add_argument("--opt_latentdim", default=8, type=int, help="dimension of latent variables")
 
-# Options for EBM NOTE
+# Options for EBM
 ap.add_argument("--opt_decoder", default="fixed", type=str)
 ap.add_argument("--opt_noise", default="none", type=str)
 ap.add_argument("--opt_targets", default="xent", type=str)
@@ -174,7 +174,14 @@ if is_root_node():
             OPTS.trains_task = task
         except:
             pass
-        tb_logdir = os.path.join(OPTS.root, "tensorboard")
+        if envswitch.who() == "jason":
+            tb_str = "{}_{}_c{}".format(
+                OPTS.targets, OPTS.noise, OPTS.line_search_c)
+            if OPTS.imitation:
+                tb_str += "_imit{}".format(OPTS.imit_rand_steps)
+            tb_logdir = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/{}".format(tb_str)
+        else:
+            tb_logdir = os.path.join(OPTS.root, "tensorboard")
         if not os.path.exists(tb_logdir):
             os.mkdir(tb_logdir)
 
@@ -213,7 +220,7 @@ if OPTS.distill:
     tgt_corpus = distilled_tgt_corpus
 else:
     tgt_corpus = train_tgt_corpus
-n_valid_samples = 5000 if OPTS.finetune else 500
+n_valid_samples = 5000 if OPTS.finetune else 5000
 if OPTS.train:
     if envswitch.who() != "shu":
         OPTS.batchtokens = 1024
@@ -300,7 +307,7 @@ if OPTS.train or OPTS.all:
     trainer.configure(
         save_path=OPTS.model_path,
         n_valid_per_epoch=n_valid_per_epoch,
-        criteria="loss",
+        criteria="targets_diff_sgd",
         tensorboard_logdir=tb_logdir,
         clip_norm=1 if OPTS.clipnorm else 0
     )

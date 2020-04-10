@@ -30,7 +30,8 @@ class LatentScoreNetwork5(Transformer):
 
     def __init__(
         self, lanmt_model, hidden_size=256, latent_size=8,
-        noise=0.1, targets="logpy", decoder="fixed", imitation=False, line_search_c=0.1, imit_rand_steps=1, enable_valid_grad=True):
+        noise=0.1, targets="logpy", decoder="fixed", imitation=False,
+        line_search_c=0.1, imit_rand_steps=1, enable_valid_grad=True):
         """
         Args:
             lanmt_model(LANMTModel)
@@ -51,17 +52,12 @@ class LatentScoreNetwork5(Transformer):
         self.targets = targets
         self.line_search_c = line_search_c
 
-        self.tb_str = "{}_{}_{}_{}_{}_{}".format(targets, decoder, noise, imitation, line_search_c, imit_rand_steps)
         if envswitch.who() == "shu":
             main_dir = "{}/data/wmt14_ende_fair/tensorboard".format(os.getenv("HOME"))
         else:
             main_dir = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/"
 
-        self._tb= SummaryWriter(
-          log_dir="{}/{}".format(main_dir, self.tb_str), flush_secs=10)
-
     def prepare(self):
-        # TODO (jason) replace the final MLP with a ConvNet with pooling (it gave a CuDNN error last time I tried it)
         self.lat2hid = nn.Linear(self._latent_size, self._hidden_size)
         self._encoder = TransformerCrossEncoder(None, self._hidden_size, 3)
         self.hid2energy = nn.Sequential(
@@ -102,15 +98,17 @@ class LatentScoreNetwork5(Transformer):
 
             grad = autograd.grad(energy, z, create_graph=False, grad_outputs=dummy)
             score = grad[0].detach()
-            z = z + score * lr # NOTE : We do gradient *ascent, as energy approximate ELBO.
+            z = z + score * lr # We do gradient ascent, as energy approximate ELBO.
             lr = lr * decay
         return z
 
     def energy_line_search(self, z, y_mask, x_states, x_mask, p_prob, n_iter, c=0.05, tau=0.5):
+        # implementation from https://en.wikipedia.org/wiki/Backtracking_line_search
+        # hyperparameters : alpha, c, tau taken from the wiki page.
         # z : [bsz, y_length, lat_size]
         for idx in range(n_iter):
             z_ini = z.detach().clone()
-            with torch.no_grad(): # targets are normalized by trg sequence length
+            with torch.no_grad():
                 targets_ini = self.compute_targets(
                     z_ini, y_mask, x_states, x_mask, p_prob)
             z_ini.requires_grad = True
@@ -121,7 +119,7 @@ class LatentScoreNetwork5(Transformer):
             grad = autograd.grad(energy, z_ini, create_graph=False, grad_outputs=dummy)
             score = grad[0].detach()
 
-            with torch.no_grad(): # targets are normalized by trg sequence length
+            with torch.no_grad():
                 alpha = 2.0
                 while True:
                     z_fin = z_ini + score * alpha
@@ -242,10 +240,11 @@ class LatentScoreNetwork5(Transformer):
         rop = ( (score * z_diff).sum(2) * y_mask ).sum(1) / y_mask.sum(1) # normalize by the trg sentence length
         loss = (rop - targets_diff) ** 2
         loss = loss.mean(0)
-        self._tb.add_scalar("monitor/loss", loss, self._mycnt)
+        loss = loss * 100
+        score_map = {"loss": loss}
 
-        #if not model.training:
-        if self._mycnt % 50 == 0:
+        if not self.training:
+        #if self._mycnt % 50 == 0:
             z_clean = p_mean # only used for monitoring, not used for training
             z_d_clean = self.delta_refine(z_clean, y_mask, x_states, x_mask)
             #z_sgd = self.energy_sgd(z_clean, y_mask, x_states, x_mask, n_iter=2, lr=0.10, decay=1.00).detach()
@@ -256,13 +255,12 @@ class LatentScoreNetwork5(Transformer):
                 targets_d_clean = self.compute_targets(z_d_clean, y_mask, x_states, x_mask, p_prob)
                 targets_sgd = self.compute_targets(z_sgd, y_mask, x_states, x_mask, p_prob)
 
-            targets_diff_ref = (targets_d_clean - targets_clean).mean().item()
-            targets_diff_sgd = (targets_sgd - targets_clean).mean().item()
-            self._tb.add_scalar("monitor/targets_diff_ref", targets_diff_ref, self._mycnt)
-            self._tb.add_scalar("monitor/targets_diff_sgd", targets_diff_sgd, self._mycnt)
+            targets_diff_ref = (targets_d_clean - targets_clean).mean()
+            targets_diff_sgd = (targets_sgd - targets_clean).mean()
+            score_map["targets_diff_sgd"] = -1 * targets_diff_sgd * 100
+            score_map["targets_diff_ref"] = -1 * targets_diff_ref * 100
 
-        loss = loss * 100
-        return {"loss": loss}
+        return score_map
 
     def forward(self, x, y, sampling=False):
         x_mask = self.to_float(torch.ne(x, 0))
