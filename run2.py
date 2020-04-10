@@ -83,12 +83,13 @@ ap.add_argument("--opt_priorl", type=int, default=6, help="layers for each z enc
 ap.add_argument("--opt_decoderl", type=int, default=6, help="number of decoder layers")
 ap.add_argument("--opt_latentdim", default=8, type=int, help="dimension of latent variables")
 
+# Options for EBM NOTE
+ap.add_argument("--opt_decoder", default="fixed", type=str)
 ap.add_argument("--opt_noise", default="none", type=str)
 ap.add_argument("--opt_targets", default="xent", type=str)
-ap.add_argument("--opt_decoder", default="fixed", type=str)
-ap.add_argument("--opt_training_mode", default="energy", type=str)
 ap.add_argument("--opt_imitation", action="store_true")
-ap.add_argument("--opt_imit_rand_steps", default=2, type=int)
+ap.add_argument("--opt_imit_rand_steps", default=1, type=int)
+ap.add_argument("--opt_line_search_c", type=float, default=0.1)
 
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
 ap.add_argument("--opt_annealbudget", action="store_true", help="switch of annealing KL budget")
@@ -207,7 +208,7 @@ else:
     tgt_corpus = train_tgt_corpus
 n_valid_samples = 5000 if OPTS.finetune else 500
 if OPTS.train:
-    OPTS.batchtokens = 2048
+    OPTS.batchtokens = 1024
     dataset = MTDataset(
         src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
         src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
@@ -244,7 +245,6 @@ if OPTS.scorenet:
     OPTS.shard = 0
     #lanmt_model_path = OPTS.model_path.replace("_scorenet", "")
     #lanmt_model_path = lanmt_model_path.replace("_denoise", "")
-    #lanmt_model_path = lanmt_model_path.replace("_training_mode", "")
     #lanmt_model_path = lanmt_model_path.replace("_noise-0.3", "")
     lanmt_model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
     #lanmt_model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_finetune_tied.pt"
@@ -262,9 +262,9 @@ if OPTS.scorenet:
         noise=OPTS.noise,
         targets=OPTS.targets,
         decoder=OPTS.decoder,
-        training_mode=OPTS.training_mode,
         imitation=OPTS.imitation,
         imit_rand_steps=OPTS.imit_rand_steps,
+        line_search_c=OPTS.line_search_c,
     )
 
 # Training
@@ -472,7 +472,7 @@ if OPTS.batch_test:
 if OPTS.evaluate or OPTS.all:
     # Post-processing
     if is_root_node():
-        hyp_path = "/tmp/{}_{}_{}_{}_{}.txt".format(OPTS.noise, OPTS.targets, OPTS.training_mode, OPTS.imitation, OPTS.imit_rand_steps)
+        hyp_path = "/tmp/{}_{}_{}_{}.txt".format(OPTS.noise, OPTS.targets, OPTS.imitation, OPTS.imit_rand_steps)
         result_path = OPTS.result_path
         with open(hyp_path, "w") as outf:
             for line in open(result_path):
