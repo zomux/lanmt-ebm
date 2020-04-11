@@ -245,7 +245,7 @@ class LatentScoreNetwork5(Transformer):
         loss = loss * 100 # scaling the loss term
         score_map = {"loss": loss}
 
-        if not self.training or self._mycnt % 500 == 0:
+        if not self.training or self._mycnt % 50 == 0:
             with torch.no_grad():
                 z_clean = p_mean # only used for monitoring, not used for training
                 z_d_clean = self.delta_refine(z_clean, y_mask, x_states, x_mask)
