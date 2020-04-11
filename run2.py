@@ -180,10 +180,13 @@ if is_root_node():
             if OPTS.imitation:
                 tb_str += "_imit{}".format(OPTS.imit_rand_steps)
             tb_logdir = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/{}".format(tb_str)
+            for logdir in [tb_logdir+"_train", tb_logdir+"_dev"]:
+                if not os.path.exists(logdir):
+                    os.mkdir(logdir)
         else:
             tb_logdir = os.path.join(OPTS.root, "tensorboard")
-        if not os.path.exists(tb_logdir):
-            os.mkdir(tb_logdir)
+            if not os.path.exists(tb_logdir):
+                os.mkdir(tb_logdir)
 
 # Get the path variables
 (
@@ -308,6 +311,7 @@ if OPTS.train or OPTS.all:
         save_path=OPTS.model_path,
         n_valid_per_epoch=n_valid_per_epoch,
         criteria="targets_diff_sgd",
+        comp_fn=max,
         tensorboard_logdir=tb_logdir,
         clip_norm=1 if OPTS.clipnorm else 0
     )
@@ -400,6 +404,89 @@ if OPTS.test or OPTS.all:
     sys.stdout.write("\n")
     trains_restore_stdout_monitor()
     print("Average decoding time: {:.0f}ms, std: {:.0f}".format(np.mean(decode_times), np.std(decode_times)))
+
+# Translate multiple sentences in batch
+if OPTS.batch_test:
+    # Translate using only one GPU
+    if not is_root_node():
+        sys.exit()
+    torch.manual_seed(OPTS.seed)
+    if OPTS.Tlatent_search:
+        print("--opt_Tlatent_search is not supported in batch test mode right now. Try to implement it.")
+    # Load trained model
+    if OPTS.use_pretrain:
+        if OPTS.dtok not in PRETRAINED_MODEL_MAP:
+            print("The model for {} doesn't exist".format(OPTS.dtok))
+        model_path = PRETRAINED_MODEL_MAP[OPTS.dtok]
+        print("loading pretrained model in {}".format(model_path))
+        OPTS.result_path = OPTS.result_path.replace("lanmt_", "lanmt_pretrain_")
+    else:
+        model_path = OPTS.model_path
+    if not os.path.exists(model_path):
+        print("Cannot find model in {}".format(model_path))
+        sys.exit()
+    nmt.load(model_path)
+    print ("Successfully loaded EBM: {}".format(model_path))
+    if torch.cuda.is_available():
+        nmt.cuda()
+    nmt.train(False)
+    if OPTS.scorenet:
+        scorenet = nmt
+        OPTS.scorenet = scorenet
+        scorenet.train(False)
+        nmt = scorenet.nmt()
+        nmt.train(False)
+    src_vocab = Vocab(src_vocab_path)
+    tgt_vocab = Vocab(tgt_vocab_path)
+    result_path = OPTS.result_path
+    # Read data
+    batch_test_size = OPTS.Tbatch_size
+    lines = open(test_src_corpus).readlines()
+    sorted_line_ids = np.argsort([len(l.split()) for l in lines])
+    start_time = time.time()
+    output_tokens = []
+    i = 0
+    while i < len(lines):
+        # Make a batch
+        batch_lines = []
+        max_len = 0
+        while len(batch_lines) * max_len < OPTS.Tbatch_size:
+            line_id = sorted_line_ids[i]
+            line = lines[line_id]
+            length = len(line.split())
+            batch_lines.append(line)
+            if length > max_len:
+                max_len = length
+            i += 1
+            if i >= len(lines):
+                break
+        x = np.zeros((len(batch_lines), max_len + 2), dtype="long")
+        for j, line in enumerate(batch_lines):
+            tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
+            x[j, :len(tokens)] = tokens
+        x = torch.tensor(x)
+        if torch.cuda.is_available():
+            x = x.cuda()
+        targets = scorenet.translate(x, n_iter=4, lr=0.1, decay=1.0)
+        target_tokens = targets.cpu().numpy().tolist()
+        output_tokens.extend(target_tokens)
+        sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
+        sys.stdout.flush()
+
+    with open(OPTS.result_path, "w") as outf:
+        # Record decoding time
+        end_time = time.time()
+        decode_time = (end_time - start_time)
+        # Convert token IDs back to words
+        id_token_pairs = list(zip(sorted_line_ids, output_tokens))
+        id_token_pairs.sort()
+        for _, target_tokens in id_token_pairs:
+            target_tokens = [t for t in target_tokens if t > 2]
+            target_words = tgt_vocab.decode(target_tokens)
+            target_sent = " ".join(target_words)
+            outf.write(target_sent + "\n")
+    sys.stdout.write("\n")
+    print("Batch decoding time: {:.2f}s".format(decode_time))
 
 # Evaluation of translaton quality
 if OPTS.evaluate or OPTS.all:

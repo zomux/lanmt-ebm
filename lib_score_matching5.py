@@ -59,11 +59,12 @@ class LatentScoreNetwork5(Transformer):
 
     def prepare(self):
         self.lat2hid = nn.Linear(self._latent_size, self._hidden_size)
-        self._encoder = TransformerCrossEncoder(None, self._hidden_size, 3)
+        self._encoder = TransformerCrossEncoder(
+            embed_layer=None, size=self._hidden_size, n_layers=3, dropout_ratio=0.2)
         self.hid2energy = nn.Sequential(
-            nn.Linear(self._hidden_size, 200),
+            nn.Linear(self._hidden_size, 100),
             nn.ELU(),
-            nn.Linear(200, 1)
+            nn.Linear(100, 1)
         )
 
     def compute_energy(self, z, y_mask, x_states, x_mask):
@@ -201,7 +202,6 @@ class LatentScoreNetwork5(Transformer):
         return self.compute_targets(q_mean, y_mask, x_states, x_mask, p_prob)
 
     def compute_loss(self, x, x_mask, y, y_mask):
-        self._mycnt += 1
         lanmt = self.nmt()
         latent_dim = lanmt.latent_dim
         x_states = lanmt.embed_layer(x)
@@ -209,24 +209,26 @@ class LatentScoreNetwork5(Transformer):
 
         p_prob = lanmt.compute_prior(y_mask, x_states, x_mask)
         p_mean, p_stddev = p_prob[..., :latent_dim], F.softplus(p_prob[..., latent_dim:])
-        stddev = p_stddev * torch.randn_like(p_stddev)
-        if self.noise == "rand":
-            stddev = stddev * np.random.random_sample()
-        z_ini = p_mean + stddev
+        z_ini = p_mean
+        if self.training:
+            stddev = p_stddev * torch.randn_like(p_stddev)
+            if self.noise == "rand":
+                stddev = stddev * np.random.random_sample()
+            z_ini += stddev
 
-        if self.imitation: # Perform K SGD steps during training
+        if self.training and self.imitation: # Perform K SGD steps during training, akin to imitation learning
             n_iter = np.random.randint(0, self.imit_rand_steps)
             #z_ini = self.energy_line_search(
             #    z_ini, y_mask, x_states, x_mask, p_prob, n_iter=n_iter, c=self.line_search_c).detach()
             z_ini = self.energy_sgd(
                 z_ini, y_mask, x_states, x_mask, n_iter=n_iter, lr=0.1, decay=1.0).detach()
-            z_ini = z_ini.detach().clone()
-            z_ini.requires_grad = True
 
+        z_ini = z_ini.detach().clone()
+        z_ini.requires_grad = True
         z_fin = self.delta_refine(z_ini, y_mask, x_states, x_mask)
         z_diff = (z_fin - z_ini).detach() # [bsz, y_length, lat_size]
 
-        with torch.no_grad(): # targets are normalized by trg sequence length
+        with torch.no_grad():
             targets_ini = self.compute_targets(z_ini, y_mask, x_states, x_mask, p_prob) # [bsz]
             targets_fin = self.compute_targets(z_fin, y_mask, x_states, x_mask, p_prob) # [bsz]
             targets_diff = targets_fin - targets_ini # [bsz]
@@ -237,14 +239,13 @@ class LatentScoreNetwork5(Transformer):
         grad = autograd.grad(energy, z_ini, create_graph=True, grad_outputs=dummy)
         score = grad[0] # [bsz, y_length, lat_size]
 
-        rop = ( (score * z_diff).sum(2) * y_mask ).sum(1) / y_mask.sum(1) # normalize by the trg sentence length
+        rop = ( (score * z_diff).sum(2) * y_mask ).sum(1) / y_mask.sum(1)
         loss = (rop - targets_diff) ** 2
         loss = loss.mean(0)
-        loss = loss * 100
+        loss = loss * 100 # scaling the loss term
         score_map = {"loss": loss}
 
-        if not self.training:
-        #if self._mycnt % 50 == 0:
+        if not self.training or self._mycnt % 500 == 0:
             with torch.no_grad():
                 z_clean = p_mean # only used for monitoring, not used for training
                 z_d_clean = self.delta_refine(z_clean, y_mask, x_states, x_mask)
@@ -258,8 +259,8 @@ class LatentScoreNetwork5(Transformer):
 
             targets_diff_ref = (targets_d_clean - targets_clean).mean()
             targets_diff_sgd = (targets_sgd - targets_clean).mean()
-            score_map["targets_diff_sgd"] = -1 * targets_diff_sgd * 100
-            score_map["targets_diff_ref"] = -1 * targets_diff_ref * 100
+            score_map["targets_diff_sgd"] = targets_diff_sgd * 100
+            score_map["targets_diff_ref"] = targets_diff_ref * 100
 
         return score_map
 
@@ -267,6 +268,7 @@ class LatentScoreNetwork5(Transformer):
         x_mask = self.to_float(torch.ne(x, 0))
         y_mask = self.to_float(torch.ne(y, 0))
         score_map = self.compute_loss(x, x_mask, y, y_mask)
+        self._mycnt += 1 # pretty hacky I know, sorry haha
         return score_map
 
     def translate(self, x, n_iter, lr, decay):
