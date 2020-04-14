@@ -19,7 +19,7 @@ sys.path.append(".")
 from lib_lanmt_modules import TransformerEncoder
 from lib_lanmt_model2 import LANMTModel2
 from lib_lanmt_modules import TransformerCrossEncoder
-from lib_simple_encoders import ConvolutionalCrossEncoder
+from lib_simple_encoders import ConvolutionalEncoder, ConvolutionalCrossEncoder
 from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
 
@@ -58,21 +58,33 @@ class LatentScoreNetwork5(Transformer):
             main_dir = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/"
 
     def prepare(self):
-        self.lat2hid = nn.Linear(self._latent_size, self._hidden_size)
-        self._encoder = TransformerCrossEncoder(
-            embed_layer=None, size=self._hidden_size, n_layers=3, dropout_ratio=0.2)
-        self.hid2energy = nn.Sequential(
+        self.energy_lat2hid = nn.Linear(self._latent_size, self._hidden_size)
+        self.energy_transformer = TransformerCrossEncoder(
+            embed_layer=None, size=self._hidden_size, n_layers=3, dropout_ratio=0.1)
+        self.energy_conv = ConvolutionalEncoder(
+            embed_layer=None, size=self._hidden_size, n_layers=3, dropout_ratio=0.1,
+            cross_attention=False, skip_connect=False)
+        self.energy_linear = nn.Sequential(
+            nn.Dropout(p=0.1),
             nn.Linear(self._hidden_size, 100),
             nn.ELU(),
+            nn.Dropout(p=0.1),
             nn.Linear(100, 1)
         )
 
     def compute_energy(self, z, y_mask, x_states, x_mask):
         # z : [bsz, y_length, lat_size]
-        h = self.lat2hid(z)  # [bsz, y_length, hid_size]
-        energy = self._encoder(h, y_mask, x_states, x_mask)  # [bsz, y_length, hid_size]
+        h = self.energy_lat2hid(z)  # [bsz, y_length, hid_size]
+        energy = self.energy_transformer(h, y_mask, x_states, x_mask)  # [bsz, y_length, hid_size]
+        """
         energy_states_mean = (energy * y_mask[:, :, None]).sum(1) / y_mask.sum(1)[:, None]  # [bsz, hid_size]
-        energy = self.hid2energy(energy_states_mean)  # [bsz, 1]
+        energy = self.energy_linear(energy_states_mean)  # [bsz, 1]
+        return energy[:, 0]
+        """
+        energy_states = energy * y_mask[:, :, None]
+        energy_states = self.energy_conv(energy_states, y_mask)
+        energy_states = energy_states.max(dim=1)[0]
+        energy = self.energy_linear(energy_states)  # [bsz, 1]
         return energy[:, 0]
 
     def delta_refine(self, z, y_mask, x_states, x_mask):
@@ -143,8 +155,8 @@ class LatentScoreNetwork5(Transformer):
     def compute_logpy(self, logits, y, y_mask, x_states, x_mask):
         shape = logits.shape
         nll = F.cross_entropy(
-          logits.view(shape[0] * shape[1], -1),
-          y.view(shape[0] * shape[1]), reduction="none", ignore_index=0)
+            logits.view(shape[0] * shape[1], -1),
+            y.view(shape[0] * shape[1]), reduction="none", ignore_index=0)
         logpy = -1 * nll
         logpy = logpy.view(shape[0], shape[1])
         logpy = (logpy * y_mask).sum(1) / y_mask.sum(1)
@@ -171,13 +183,15 @@ class LatentScoreNetwork5(Transformer):
         logqz = logqz.detach()
         return logqz
 
-    def compute_targets(self, z, y_mask, x_states, x_mask, p_prob):
+    def compute_targets(self, z, y_mask, x_states, x_mask, p_prob, y_pred=None):
         lanmt = self.nmt()
         latent_dim = lanmt.latent_dim
         logpy, logpz, logqz = 0, 0, 0
 
         logits = self.get_logits(z, y_mask, x_states, x_mask)
-        y_pred = logits.argmax(-1)
+        if y_pred == None:
+            y_pred = logits.argmax(-1)
+            y_pred = y_pred * y_mask.long()
         logpy = self.compute_logpy(logits, y_pred, y_mask, x_states, x_mask)
         logits = None
 
@@ -185,7 +199,7 @@ class LatentScoreNetwork5(Transformer):
             logpz = self.compute_logpz(z, y_mask, p_prob)
 
         if self.targets == "elbo":
-            logqz = self.compute_logqz(z, y_pred, y_mask, x_states, x_mask)
+            logqz = self.compute_logqz(z, y_pred, y_mask, x_states, x_mask) #NOTE
 
         return logpy + logpz - logqz
 
@@ -195,11 +209,14 @@ class LatentScoreNetwork5(Transformer):
 
         logits = self.get_logits(z, y_mask, x_states, x_mask)
         y_pred = logits.argmax(-1)
+        y_pred = y_pred * y_mask.long()
         logits = None
         q_prob = lanmt.compute_posterior(y_pred, y_mask, x_states, x_mask)
-        q_mean = q_prob[..., :latent_dim]
+        q_mean, q_stddev = q_prob[..., :latent_dim], F.softplus(q_prob[..., latent_dim:])
+        #z_ = q_mean
+        z_ = q_mean + q_stddev * torch.randn_like(q_stddev)
 
-        return self.compute_targets(q_mean, y_mask, x_states, x_mask, p_prob)
+        return self.compute_targets(z_, y_mask, x_states, x_mask, p_prob, y_pred=y_pred)
 
     def compute_loss(self, x, x_mask, y, y_mask):
         lanmt = self.nmt()
@@ -229,8 +246,8 @@ class LatentScoreNetwork5(Transformer):
         z_diff = (z_fin - z_ini).detach() # [bsz, y_length, lat_size]
 
         with torch.no_grad():
-            targets_ini = self.compute_targets(z_ini, y_mask, x_states, x_mask, p_prob) # [bsz]
-            targets_fin = self.compute_targets(z_fin, y_mask, x_states, x_mask, p_prob) # [bsz]
+            targets_ini = self.compute_targets2(z_ini, y_mask, x_states, x_mask, p_prob) # [bsz]
+            targets_fin = self.compute_targets2(z_fin, y_mask, x_states, x_mask, p_prob) # [bsz]
             targets_diff = targets_fin - targets_ini # [bsz]
 
         energy = self.compute_energy(z_ini, y_mask, x_states, x_mask) # [bsz]
@@ -247,15 +264,15 @@ class LatentScoreNetwork5(Transformer):
 
         if not self.training or self._mycnt % 50 == 0:
             with torch.no_grad():
-                z_clean = p_mean # only used for monitoring, not used for training
+                z_clean = p_mean
                 z_d_clean = self.delta_refine(z_clean, y_mask, x_states, x_mask)
             #z_sgd = self.energy_sgd(z_clean, y_mask, x_states, x_mask, n_iter=2, lr=0.10, decay=1.00).detach()
             z_sgd = self.energy_line_search(
-                z_clean, y_mask, x_states, x_mask, p_prob, n_iter=20, c=self.line_search_c).detach()
+                z_clean, y_mask, x_states, x_mask, p_prob, n_iter=10, c=self.line_search_c).detach()
             with torch.no_grad():
-                targets_clean = self.compute_targets(z_clean, y_mask, x_states, x_mask, p_prob)
-                targets_d_clean = self.compute_targets(z_d_clean, y_mask, x_states, x_mask, p_prob)
-                targets_sgd = self.compute_targets(z_sgd, y_mask, x_states, x_mask, p_prob)
+                targets_clean = self.compute_targets2(z_clean, y_mask, x_states, x_mask, p_prob)
+                targets_d_clean = self.compute_targets2(z_d_clean, y_mask, x_states, x_mask, p_prob)
+                targets_sgd = self.compute_targets2(z_sgd, y_mask, x_states, x_mask, p_prob)
 
             targets_diff_ref = (targets_d_clean - targets_clean).mean()
             targets_diff_sgd = (targets_sgd - targets_clean).mean()
@@ -292,23 +309,18 @@ class LatentScoreNetwork5(Transformer):
         # y_mask = x_mask
 
         # Compute p(z|x)
-        pos_states = lanmt.pos_embed_layer(y_mask[:, :, None]).expand(
-          list(y_mask.shape) + [lanmt.hidden_size])
-        p_states = lanmt.prior_encoder(pos_states, y_mask, x_states, x_mask)
-        p_prob = lanmt.p_hid2lat(p_states)
+        p_prob = lanmt.compute_prior(y_mask, x_states, x_mask)
         z = p_prob[..., :lanmt.latent_dim]
         if OPTS.Twithout_ebm:
             z_ = z
         else:
-            z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, lr=lr, decay=decay).detach()
+            #z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, lr=lr, decay=decay).detach()
+            z_ = self.energy_line_search(
+                z, y_mask, x_states, x_mask, p_prob, n_iter=10, c=self.line_search_c).detach()
 
-        hid = lanmt.lat2hid(z_)
-        decoder_states = lanmt.decoder(hid, y_mask, x_states, x_mask)
-        logits = lanmt.expander_nn(decoder_states)
+        logits = self.get_logits(z_, y_mask, x_states, x_mask)
         y_pred = logits.argmax(-1)
         y_pred = y_pred * y_mask.long()
-        # y_pred = y_pred * x_mask.long()
-
         return y_pred
 
     def nmt(self):
