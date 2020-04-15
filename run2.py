@@ -91,13 +91,9 @@ ap.add_argument("--opt_imitation", action="store_true")
 ap.add_argument("--opt_imit_rand_steps", default=1, type=int)
 ap.add_argument("--opt_line_search_c", type=float, default=0.1)
 ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
-<<<<<<< HEAD
 ap.add_argument("--opt_modeltype", default="realgrad", type=str)
 ap.add_argument("--opt_ebmtype", default="transformer", type=str)
-
-=======
 ap.add_argument("--opt_cosine", default="T", type=str)
->>>>>>> 907ec8639ae8c38810bf6364a8698d077fa371ef
 
 # Decoding options
 ap.add_argument("--opt_Twithout_ebm", action="store_true", help="without using EBM")
