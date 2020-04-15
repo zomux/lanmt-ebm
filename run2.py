@@ -83,20 +83,24 @@ ap.add_argument("--opt_priorl", type=int, default=6, help="layers for each z enc
 ap.add_argument("--opt_decoderl", type=int, default=6, help="number of decoder layers")
 ap.add_argument("--opt_latentdim", default=8, type=int, help="dimension of latent variables")
 
+# Options for EBM
+ap.add_argument("--opt_decoder", default="fixed", type=str)
 ap.add_argument("--opt_noise", default="none", type=str)
 ap.add_argument("--opt_targets", default="xent", type=str)
-ap.add_argument("--opt_decoder", default="fixed", type=str)
-ap.add_argument("--opt_training_mode", default="energy", type=str)
 ap.add_argument("--opt_imitation", action="store_true")
-ap.add_argument("--opt_imit_rand_steps", default=2, type=int)
+ap.add_argument("--opt_imit_rand_steps", default=1, type=int)
+ap.add_argument("--opt_line_search_c", type=float, default=0.1)
 ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
+<<<<<<< HEAD
 ap.add_argument("--opt_modeltype", default="realgrad", type=str)
 ap.add_argument("--opt_ebmtype", default="transformer", type=str)
 
+=======
+ap.add_argument("--opt_cosine", default="T", type=str)
+>>>>>>> 907ec8639ae8c38810bf6364a8698d077fa371ef
 
 # Decoding options
 ap.add_argument("--opt_Twithout_ebm", action="store_true", help="without using EBM")
-
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
 ap.add_argument("--opt_annealbudget", action="store_true", help="switch of annealing KL budget")
 ap.add_argument("--opt_fixbug1", action="store_true", help="fix bug in length converter")
@@ -177,9 +181,19 @@ if is_root_node():
             OPTS.trains_task = task
         except:
             pass
-        tb_logdir = os.path.join(OPTS.root, "tensorboard")
-        if not os.path.exists(tb_logdir):
-            os.mkdir(tb_logdir)
+        if envswitch.who() == "jason":
+            tb_str = "{}_{}".format(
+                OPTS.noise, OPTS.cosine)
+            if OPTS.imitation:
+                tb_str += "_imit{}".format(OPTS.imit_rand_steps)
+            tb_logdir = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/{}".format(tb_str)
+            for logdir in [tb_logdir+"_train", tb_logdir+"_dev"]:
+                if not os.path.exists(logdir):
+                    os.mkdir(logdir)
+        else:
+            tb_logdir = os.path.join(OPTS.root, "tensorboard")
+            if not os.path.exists(tb_logdir):
+                os.mkdir(tb_logdir)
 
 # Get the path variables
 (
@@ -216,10 +230,10 @@ if OPTS.distill:
     tgt_corpus = distilled_tgt_corpus
 else:
     tgt_corpus = train_tgt_corpus
-n_valid_samples = 5000 if OPTS.finetune else 500
+n_valid_samples = 5000 if OPTS.finetune else 200
 if OPTS.train:
     if envswitch.who() != "shu":
-        OPTS.batchtokens = 2048
+        OPTS.batchtokens = 1024
     dataset = MTDataset(
         src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
         src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
@@ -256,7 +270,6 @@ if OPTS.scorenet:
     OPTS.shard = 0
     #lanmt_model_path = OPTS.model_path.replace("_scorenet", "")
     #lanmt_model_path = lanmt_model_path.replace("_denoise", "")
-    #lanmt_model_path = lanmt_model_path.replace("_training_mode", "")
     #lanmt_model_path = lanmt_model_path.replace("_noise-0.3", "")
     lanmt_model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
     #lanmt_model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_finetune_tied.pt"
@@ -269,18 +282,20 @@ if OPTS.scorenet:
         nmt.cuda()
     if envswitch.who() == "shu":
         from lib_score_matching5_shu import LatentScoreNetwork5
+        ScoreNet = LatentScoreNetwork5
     else:
-        from lib_score_matching5 import LatentScoreNetwork5
-    nmt = LatentScoreNetwork5(
+        from lib_score_matching6 import LatentScoreNetwork6
+        ScoreNet = LatentScoreNetwork6
+    nmt = ScoreNet(
         nmt,
         hidden_size=OPTS.hiddensz,
         latent_size=OPTS.latentdim,
         noise=OPTS.noise,
         targets=OPTS.targets,
         decoder=OPTS.decoder,
-        training_mode=OPTS.training_mode,
         imitation=OPTS.imitation,
         imit_rand_steps=OPTS.imit_rand_steps,
+        cosine=OPTS.cosine,
     )
 
 # Training
@@ -308,7 +323,8 @@ if OPTS.train or OPTS.all:
     trainer.configure(
         save_path=OPTS.model_path,
         n_valid_per_epoch=n_valid_per_epoch,
-        criteria="loss",
+        criteria="cosine_sim",
+        comp_fn=max,
         tensorboard_logdir=tb_logdir,
         clip_norm=0.1 if OPTS.clipnorm else 0
     )
@@ -402,11 +418,95 @@ if OPTS.test or OPTS.all:
     trains_restore_stdout_monitor()
     print("Average decoding time: {:.0f}ms, std: {:.0f}".format(np.mean(decode_times), np.std(decode_times)))
 
+# Translate multiple sentences in batch
+if OPTS.batch_test:
+    # Translate using only one GPU
+    if not is_root_node():
+        sys.exit()
+    torch.manual_seed(OPTS.seed)
+    if OPTS.Tlatent_search:
+        print("--opt_Tlatent_search is not supported in batch test mode right now. Try to implement it.")
+    # Load trained model
+    if OPTS.use_pretrain:
+        if OPTS.dtok not in PRETRAINED_MODEL_MAP:
+            print("The model for {} doesn't exist".format(OPTS.dtok))
+        model_path = PRETRAINED_MODEL_MAP[OPTS.dtok]
+        print("loading pretrained model in {}".format(model_path))
+        OPTS.result_path = OPTS.result_path.replace("lanmt_", "lanmt_pretrain_")
+    else:
+        model_path = OPTS.model_path
+    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-C_distill_noise-rand_scorenet_tied.pt"
+    if not os.path.exists(model_path):
+        print("Cannot find model in {}".format(model_path))
+        sys.exit()
+    nmt.load(model_path)
+    print ("Successfully loaded EBM: {}".format(model_path))
+    if torch.cuda.is_available():
+        nmt.cuda()
+    nmt.train(False)
+    if OPTS.scorenet:
+        scorenet = nmt
+        OPTS.scorenet = scorenet
+        scorenet.train(False)
+        nmt = scorenet.nmt()
+        nmt.train(False)
+    src_vocab = Vocab(src_vocab_path)
+    tgt_vocab = Vocab(tgt_vocab_path)
+    result_path = OPTS.result_path
+    # Read data
+    batch_test_size = OPTS.Tbatch_size
+    lines = open(test_src_corpus).readlines()
+    sorted_line_ids = np.argsort([len(l.split()) for l in lines])
+    start_time = time.time()
+    output_tokens = []
+    i = 0
+    while i < len(lines):
+        # Make a batch
+        batch_lines = []
+        max_len = 0
+        while len(batch_lines) * max_len < OPTS.Tbatch_size:
+            line_id = sorted_line_ids[i]
+            line = lines[line_id]
+            length = len(line.split())
+            batch_lines.append(line)
+            if length > max_len:
+                max_len = length
+            i += 1
+            if i >= len(lines):
+                break
+        x = np.zeros((len(batch_lines), max_len + 2), dtype="long")
+        for j, line in enumerate(batch_lines):
+            tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
+            x[j, :len(tokens)] = tokens
+        x = torch.tensor(x)
+        if torch.cuda.is_available():
+            x = x.cuda()
+        targets = scorenet.translate(x, n_iter=1)
+        target_tokens = targets.cpu().numpy().tolist()
+        output_tokens.extend(target_tokens)
+        sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
+        sys.stdout.flush()
+
+    with open(OPTS.result_path, "w") as outf:
+        # Record decoding time
+        end_time = time.time()
+        decode_time = (end_time - start_time)
+        # Convert token IDs back to words
+        id_token_pairs = list(zip(sorted_line_ids, output_tokens))
+        id_token_pairs.sort()
+        for _, target_tokens in id_token_pairs:
+            target_tokens = [t for t in target_tokens if t > 2]
+            target_words = tgt_vocab.decode(target_tokens)
+            target_sent = " ".join(target_words)
+            outf.write(target_sent + "\n")
+    sys.stdout.write("\n")
+    print("Batch decoding time: {:.2f}s".format(decode_time))
+
 # Evaluation of translaton quality
 if OPTS.evaluate or OPTS.all:
     # Post-processing
     if is_root_node():
-        hyp_path = "/tmp/{}_{}_{}_{}_{}.txt".format(OPTS.noise, OPTS.targets, OPTS.training_mode, OPTS.imitation, OPTS.imit_rand_steps)
+        hyp_path = "/tmp/{}_{}_{}.txt".format(OPTS.noise, OPTS.targets, OPTS.cosine)
         result_path = OPTS.result_path
         with open(hyp_path, "w") as outf:
             for line in open(result_path):

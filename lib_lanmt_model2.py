@@ -158,16 +158,6 @@ class LANMTModel2(Transformer):
         kl = kl.sum(-1)
         return kl
 
-    def compute_vae_KL2(self, p_prob, q_prob):
-        mu1 = q_prob[:, :, :self.latent_dim]
-        stddev1 = F.softplus(q_prob[:, :, self.latent_dim:])
-        mu2 = p_prob[:, :, :self.latent_dim]
-        stddev2 = F.softplus(p_prob[:, :, self.latent_dim:])
-        kl = torch.log(stddev2 / (stddev1 + 1e-8) + 1e-8) + (
-                    (torch.pow(stddev1, 2) + torch.pow(mu1 - mu2, 2)) / (2 * torch.pow(stddev2, 2))) - 0.5
-        kl = kl.sum(-1)
-        return kl
-
     def predict_length(self, p_states, x_mask):
         """Predict the target length based on latent variables and source states.
         """
@@ -242,22 +232,12 @@ class LANMTModel2(Transformer):
         x_states = self.embed_layer(x)
         x_states = self.x_encoder(x_states, x_mask)
 
-        # ----------- Compute prior and approximated posterior -------------#
         # Compute p(z|x)
-        pos_states = self.pos_embed_layer(y).expand(y_shape + [self.hidden_size])
-        p_states = self.prior_encoder(pos_states, y_mask, x_states, x_mask)
-        p_prob = self.p_hid2lat(p_states)
-        #p_mean, p_stddev = (
-        #  p_states[..., :self.latent_dim], p_states[..., self.latent_dim:])
+        p_prob = self.compute_prior(y_mask, x_states, x_mask)
 
         # Compute q(z|x,y)
-        y_states = self.embed_layer(y)
-        q_states = self.q_encoder_xy(y_states, y_mask, x_states, x_mask)
-        q_prob = self.q_hid2lat(q_states)
-        q_mean, q_stddev = (
-          q_prob[..., :self.latent_dim],
-          F.softplus(q_prob[..., self.latent_dim:]))
-
+        q_prob = self.compute_posterior(y, y_mask, x_states, x_mask)
+        q_mean, q_stddev = q_prob[..., :self.latent_dim], F.softplus(q_prob[..., self.latent_dim:])
         z_q = q_mean + q_stddev * torch.randn_like(q_stddev)
 
         # Compute length prediction loss

@@ -25,12 +25,12 @@ from nmtlab.utils import OPTS
 
 from lib_envswitch import envswitch
 
-class LatentScoreNetwork5(Transformer):
+class LatentScoreNetwork6(Transformer):
 
     def __init__(
         self, lanmt_model, hidden_size=256, latent_size=8,
         noise=0.1, targets="logpy", decoder="fixed", imitation=False,
-        line_search_c=0.1, imit_rand_steps=1, enable_valid_grad=True):
+        imit_rand_steps=1, cosine="T", enable_valid_grad=True):
         """
         Args:
             lanmt_model(LANMTModel)
@@ -40,16 +40,15 @@ class LatentScoreNetwork5(Transformer):
         self._hidden_size = hidden_size
         self._latent_size = latent_size
         self.set_stepwise_training(False)
-        super(LatentScoreNetwork5, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
+        super(LatentScoreNetwork6, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         lanmt_model.train(False)
         self._lanmt = [lanmt_model]
         self.enable_valid_grad = True
         self.train()
         self._mycnt = 0
+        self.cosine_loss = cosine_loss_c if cosine=="C" else cosine_loss_tc
 
         self.noise = noise
-        self.targets = targets
-        self.line_search_c = line_search_c
 
         if envswitch.who() == "shu":
             main_dir = "{}/data/wmt14_ende_fair/tensorboard".format(os.getenv("HOME"))
@@ -71,6 +70,20 @@ class LatentScoreNetwork5(Transformer):
             nn.Linear(100, 1)
         )
 
+        self.magnitude_lat2hid = nn.Linear(self._latent_size, self._hidden_size)
+        self.magnitude_transformer = TransformerCrossEncoder(
+            embed_layer=None, size=self._hidden_size, n_layers=3, dropout_ratio=0.1)
+        self.magnitude_conv = ConvolutionalEncoder(
+            embed_layer=None, size=self._hidden_size, n_layers=3, dropout_ratio=0.1,
+            cross_attention=False, skip_connect=False)
+        self.magnitude_linear = nn.Sequential(
+            nn.Dropout(p=0.1),
+            nn.Linear(self._hidden_size, 100),
+            nn.ELU(),
+            nn.Dropout(p=0.1),
+            nn.Linear(100, 1)
+        )
+
     def compute_energy(self, z, y_mask, x_states, x_mask):
         # z : [bsz, y_length, lat_size]
         h = self.energy_lat2hid(z)  # [bsz, y_length, hid_size]
@@ -78,9 +91,18 @@ class LatentScoreNetwork5(Transformer):
         energy_states = energy * y_mask[:, :, None]
         energy_states = self.energy_conv(energy_states, y_mask)
         energy_states = energy_states.max(dim=1)[0]
-        #energy_states = (energy * y_mask[:, :, None]).sum(1) / y_mask.sum(1)[:, None]  # [bsz, hid_size]
         energy = self.energy_linear(energy_states)  # [bsz, 1]
         return energy[:, 0]
+
+    def compute_magnitude(self, z, y_mask, x_states, x_mask):
+        # z : [bsz, y_length, lat_size]
+        h = self.magnitude_lat2hid(z)  # [bsz, y_length, hid_size]
+        magnitude = self.magnitude_transformer(h, y_mask, x_states, x_mask)  # [bsz, y_length, hid_size]
+        magnitude_states = magnitude * y_mask[:, :, None]
+        magnitude_states = self.magnitude_conv(magnitude_states, y_mask)
+        magnitude_states = magnitude_states.max(dim=1)[0]
+        magnitude = self.magnitude_linear(magnitude_states)  # [bsz, 1]
+        return magnitude[:, 0]
 
     def delta_refine(self, z, y_mask, x_states, x_mask):
         lanmt = self.nmt()
@@ -95,20 +117,28 @@ class LatentScoreNetwork5(Transformer):
         z = q_prob[..., :lanmt.latent_dim]
         return z
 
-    def energy_sgd(self, z, y_mask, x_states, x_mask, n_iter, lr, decay):
+    def energy_sgd(self, z, y_mask, x_states, x_mask, n_iter):
         # z : [bsz, y_length, lat_size]
+        y_length = y_mask.sum(1).float()
+        scores = []
         for idx in range(n_iter):
             z = z.detach().clone()
             z.requires_grad = True
+            magnitude = self.compute_magnitude(z, y_mask, x_states, x_mask) # [bsz]
+
             energy = self.compute_energy(z, y_mask, x_states, x_mask)
             dummy = torch.ones_like(energy)
             dummy.requires_grad = True
-
             grad = autograd.grad(energy, z, create_graph=False, grad_outputs=dummy)
-            score = grad[0].detach()
-            z = z + score * lr # We do gradient ascent, as energy approximate ELBO.
-            lr = lr * decay
-        return z
+            score = grad[0].detach() # [bsz, length, latent_dim]
+            scores.append(score)
+            score_norm = (score ** 2) * y_mask[:, :, None]
+            score_norm = score_norm.sum(2).sum(1).sqrt()
+            multiplier = magnitude * y_length.sqrt() / score_norm
+            score = score * multiplier[:, None, None]
+
+            z = z + score
+        return z, scores
 
     def energy_line_search(self, z, y_mask, x_states, x_mask, p_prob, n_iter, c=0.05, tau=0.5):
         # implementation from https://en.wikipedia.org/wiki/Backtracking_line_search
@@ -150,75 +180,12 @@ class LatentScoreNetwork5(Transformer):
         logits = lanmt.expander_nn(decoder_states)
         return logits
 
-    def compute_logpy(self, logits, y, y_mask, x_states, x_mask):
-        shape = logits.shape
-        nll = F.cross_entropy(
-            logits.view(shape[0] * shape[1], -1),
-            y.view(shape[0] * shape[1]), reduction="none", ignore_index=0)
-        logpy = -1 * nll
-        logpy = logpy.view(shape[0], shape[1])
-        logpy = logpy.detach()
-        return logpy # [bsz, targets_length]
-
-    def compute_logpz(self, z, y_mask, p_prob):
-        latent_dim = self.nmt().latent_dim
-        p_mean, p_stddev = p_prob[..., :latent_dim], F.softplus(p_prob[..., latent_dim:])
-        logpz = -0.5 * ( (z - p_mean) / p_stddev ) ** 2 - torch.log(p_stddev * math.sqrt(2 * math.pi))
-        logpz = logpz.sum(2)
-        logpz = logpz.detach()
-        return logpz # [bsz, targets_length]
-
-    def compute_logqz(self, z, y, y_mask, x_states, x_mask):
-        lanmt = self.nmt()
-        latent_dim = self.nmt().latent_dim
-        q_prob = lanmt.compute_posterior(y, y_mask, x_states, x_mask)
-        q_mean, q_stddev = q_prob[..., :latent_dim], F.softplus(q_prob[..., latent_dim:])
-        logqz = -0.5 * ( (z - q_mean) / q_stddev ) ** 2 - torch.log(q_stddev * math.sqrt(2 * math.pi))
-        logqz = logqz.sum(2)
-        logqz = logqz.detach()
-        return logqz # [bsz, targets_length]
-
-    def compute_targets(self, z, y_mask, x_states, x_mask, p_prob, y_pred=None):
-        lanmt = self.nmt()
-        latent_dim = lanmt.latent_dim
-        logpy, logpz, logqz = 0, 0, 0
-
-        logits = self.get_logits(z, y_mask, x_states, x_mask)
-        if y_pred == None:
-            y_pred = logits.argmax(-1)
-            y_pred = y_pred * y_mask.long()
-        logpy = self.compute_logpy(logits, y_pred, y_mask, x_states, x_mask)
-
-        if self.targets == "joint" or self.targets == "elbo":
-            logpz = self.compute_logpz(z, y_mask, p_prob)
-
-        if self.targets == "elbo":
-            logqz = self.compute_logqz(z, y_pred, y_mask, x_states, x_mask)
-
-        targets = logpy + logpz - logqz
-        targets = mean_t(targets, y_mask)
-        return targets
-
-    def compute_targets2(self, z, y_mask, x_states, x_mask, p_prob):
-        lanmt = self.nmt()
-        latent_dim = lanmt.latent_dim
-
-        logits = self.get_logits(z, y_mask, x_states, x_mask)
-        y_pred = logits.argmax(-1)
-        y_pred = y_pred * y_mask.long()
-        logits = None
-        q_prob = lanmt.compute_posterior(y_pred, y_mask, x_states, x_mask)
-        q_mean, q_stddev = q_prob[..., :latent_dim], F.softplus(q_prob[..., latent_dim:])
-        #z_ = q_mean
-        z_ = q_mean + q_stddev * torch.randn_like(q_stddev)
-
-        return self.compute_targets(z_, y_mask, x_states, x_mask, p_prob, y_pred=y_pred)
-
     def compute_loss(self, x, x_mask, y, y_mask):
         lanmt = self.nmt()
         latent_dim = lanmt.latent_dim
         x_states = lanmt.embed_layer(x)
         x_states = lanmt.x_encoder(x_states, x_mask)
+        y_length = y_mask.sum(1).float()
 
         p_prob = lanmt.compute_prior(y_mask, x_states, x_mask)
         p_mean, p_stddev = p_prob[..., :latent_dim], F.softplus(p_prob[..., latent_dim:])
@@ -229,61 +196,40 @@ class LatentScoreNetwork5(Transformer):
                 stddev = stddev * np.random.random_sample()
             z_ini += stddev
 
-        if self.training and self.imitation: # Perform K SGD steps during training, akin to imitation learning
-            n_iter = np.random.randint(0, self.imit_rand_steps)
-            #z_ini, _ = self.energy_line_search(
-            #    z_ini, y_mask, x_states, x_mask, p_prob, n_iter=n_iter, c=self.line_search_c).detach()
-            z_ini = self.energy_sgd(
-                z_ini, y_mask, x_states, x_mask, n_iter=n_iter, lr=0.1, decay=1.0).detach()
-
         z_ini = z_ini.detach().clone()
         z_ini.requires_grad = True
         z_fin = self.delta_refine(z_ini, y_mask, x_states, x_mask)
         z_diff = (z_fin - z_ini).detach() # [bsz, targets_length, lat_size]
-
-        with torch.no_grad():
-            targets_ini = self.compute_targets(z_ini, y_mask, x_states, x_mask, p_prob)
-            targets_fin = self.compute_targets(z_fin, y_mask, x_states, x_mask, p_prob)
-            targets_diff = targets_fin - targets_ini
 
         energy = self.compute_energy(z_ini, y_mask, x_states, x_mask) # [bsz]
         dummy = torch.ones_like(energy)
         dummy.requires_grad = True
         grad = autograd.grad(energy, z_ini, create_graph=True, grad_outputs=dummy)
         score = grad[0] # [bsz, targets_length, lat_size]
+        loss_direction = self.cosine_loss(score, z_diff, y_mask) # [bsz]
 
-        loss = cosine_loss(score, z_diff, y_mask)
-        #rop = mean_t((score * z_diff).sum(2), y_mask) # [bsz]
-        #loss = (rop - targets_diff) ** 2
-        #loss = mean_bt((rop - targets_diff) ** 2, y_mask)
+        magnitude = self.compute_magnitude(z_ini, y_mask, x_states, x_mask) # [bsz]
+        z_diff_norm = (z_diff ** 2) * y_mask[:, :, None]
+        z_diff_norm = z_diff_norm.sum(2).sum(1).sqrt() / y_length.sqrt() # euclidean norm normalized over length
+        loss_magnitude = (magnitude - z_diff_norm) ** 2
+
+        loss = loss_magnitude + loss_direction
+
         loss = loss.mean(0)
-        #loss = loss * 100 # scaling the loss term
         score_map = {"loss": loss}
         energy, dummy, score, grad = None, None, None, None
 
         if not self.training or self._mycnt % 50 == 0:
-            with torch.no_grad():
-                z_clean = p_mean
-                z_d_clean = self.delta_refine(z_clean, y_mask, x_states, x_mask)
-            #z_sgd = self.energy_sgd(z_clean, y_mask, x_states, x_mask, n_iter=2, lr=0.10, decay=1.00).detach()
-
-            z_sgd, scores = self.energy_line_search(
-                z_clean, y_mask, x_states, x_mask, p_prob, n_iter=10, c=self.line_search_c)
-            z_sgd = z_sgd.detach()
-            with torch.no_grad():
-                targets_clean = self.compute_targets(z_clean, y_mask, x_states, x_mask, p_prob)
-                targets_d_clean = self.compute_targets(z_d_clean, y_mask, x_states, x_mask, p_prob)
-                targets_sgd = self.compute_targets(z_sgd, y_mask, x_states, x_mask, p_prob)
-
-            targets_diff_ref = (targets_d_clean - targets_clean).mean()
-            targets_diff_sgd = (targets_sgd - targets_clean).mean()
-            score_map["targets_diff_sgd"] = targets_diff_sgd * 100
-            score_map["targets_diff_ref"] = targets_diff_ref * 100
-
-            score_map["cosine_sim"] = mean_bt(F.cosine_similarity(z_diff, scores[0], dim=2), y_mask)
+            z_clean = p_mean
+            z_sgd, scores = self.energy_sgd(
+                z_clean, y_mask, x_states, x_mask, n_iter=1)
+            score_map["cosine_sim"] = 1 - self.cosine_loss(z_diff, scores[0], y_mask).mean()
             score_map["z_ini_norm"] = mean_bt(z_ini.norm(dim=2), y_mask)
             score_map["z_fin_norm"] = mean_bt(z_fin.norm(dim=2), y_mask)
-            score_map["z_diff_norm"] = mean_bt((z_fin - z_ini).norm(dim=2), y_mask)
+            score_map["z_diff_norm"] = mean_bt(z_diff.norm(dim=2), y_mask)
+
+            score_map["loss_magnitude"] = loss_magnitude.mean()
+            score_map["loss_direction"] = loss_direction.mean()
 
         return score_map
 
@@ -294,7 +240,7 @@ class LatentScoreNetwork5(Transformer):
         self._mycnt += 1 # pretty hacky I know, sorry haha
         return score_map
 
-    def translate(self, x, n_iter, lr, decay):
+    def translate(self, x, n_iter):
         """ Testing codes.
         """
         lanmt = self.nmt()
@@ -320,9 +266,7 @@ class LatentScoreNetwork5(Transformer):
         if OPTS.Twithout_ebm:
             z_ = z
         else:
-            #z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, lr=lr, decay=decay).detach()
-            z_, _ = self.energy_line_search(
-                z, y_mask, x_states, x_mask, p_prob, n_iter=10, c=self.line_search_c).detach()
+            z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter).detach()
 
         logits = self.get_logits(z_, y_mask, x_states, x_mask)
         y_pred = logits.argmax(-1)
@@ -342,7 +286,20 @@ def mean_t(tensor, mask):
     assert tensor.shape == mask.shape
     return (tensor * mask).sum(1) / mask.sum(1)
 
-def cosine_loss(x1, x2, mask):
+def cosine_loss_tc(x1, x2, mask):
+    # Compute cosine loss over T and C dimension (ignoring PAD)
+    x1_norm = (x1 ** 2) ** mask[:, :, None]
+    x1_norm = x1_norm.sum(2).sum(1).sqrt()
+    x2_norm = (x2 ** 2) ** mask[:, :, None]
+    x2_norm = x2_norm.sum(2).sum(1).sqrt()
+    num = (x1 * x2) * mask[:, :, None]
+    num = num.sum(2).sum(1)
+    denom = x1_norm * x2_norm
+    sim = num / denom
+
+    return 1 - sim # [bsz]
+
+def cosine_loss_c(x1, x2, mask):
     # Average across the Time dimension (given a binary mask)
     sim = F.cosine_similarity(x1, x2, dim=2)
     sim = mean_t(sim, mask) # [bsz]
@@ -355,7 +312,7 @@ if __name__ == '__main__':
     lanmt = LANMTModel2(
         src_vocab_size=1000, tgt_vocab_size=1000,
         prior_layers=1, decoder_layers=1)
-    snet = LatentScoreNetwork4(lanmt)
+    snet = LatentScoreNetwork6(lanmt)
     x = torch.tensor([[1,2,3,4,5]])
     y = torch.tensor([[1,2,3]])
     if torch.cuda.is_available():
