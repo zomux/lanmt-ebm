@@ -216,6 +216,19 @@ class LANMTModel2(Transformer):
         score_map["loss"] = remain_loss + score_map["nll"]
         return score_map, remain_loss
 
+    def compute_prior(self, y_mask, x_states, x_mask):
+        y_shape = list(y_mask.shape)
+        pos_states = self.pos_embed_layer(y_mask).expand(y_shape + [self.hidden_size])
+        p_states = self.prior_encoder(pos_states, y_mask, x_states, x_mask)
+        p_prob = self.p_hid2lat(p_states)
+        return p_prob
+
+    def compute_posterior(self, y, y_mask, x_states, x_mask):
+        y_states = self.embed_layer(y)
+        q_states = self.q_encoder_xy(y_states, y_mask, x_states, x_mask)
+        q_prob = self.q_hid2lat(q_states)
+        return q_prob
+
     def forward(self, x, y, sampling=False, return_code=False):
         """Model training.
         """

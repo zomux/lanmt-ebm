@@ -90,6 +90,9 @@ ap.add_argument("--opt_training_mode", default="energy", type=str)
 ap.add_argument("--opt_imitation", action="store_true")
 ap.add_argument("--opt_imit_rand_steps", default=2, type=int)
 ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
+ap.add_argument("--opt_modeltype", default="realgrad", type=str)
+ap.add_argument("--opt_ebmtype", default="transformer", type=str)
+
 
 # Decoding options
 ap.add_argument("--opt_Twithout_ebm", action="store_true", help="without using EBM")
@@ -264,7 +267,10 @@ if OPTS.scorenet:
         print ("Successfully loaded LANMT: {}".format(lanmt_model_path))
     if torch.cuda.is_available():
         nmt.cuda()
-    from lib_score_matching5 import LatentScoreNetwork5
+    if envswitch.who() == "shu":
+        from lib_score_matching5_shu import LatentScoreNetwork5
+    else:
+        from lib_score_matching5 import LatentScoreNetwork5
     nmt = LatentScoreNetwork5(
         nmt,
         hidden_size=OPTS.hiddensz,
@@ -285,7 +291,7 @@ if OPTS.train or OPTS.all:
         scheduler = SimpleScheduler(max_epoch=1)
     elif OPTS.scorenet:
         n_valid_per_epoch = 10
-        scheduler = SimpleScheduler(max_epoch=1 if envswitch.who() == "shu" else 20)
+        scheduler = SimpleScheduler(max_epoch=2 if envswitch.who() == "shu" else 20)
     else:
         scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
     if OPTS.scorenet and False:
@@ -297,13 +303,14 @@ if OPTS.train or OPTS.all:
         scheduler=scheduler, multigpu=gpu_num > 1,
         using_horovod=horovod_installed)
     OPTS.trainer = trainer
-    print ("TENSORBOARD : ", tb_logdir)
+    if is_root_node():
+        print("TENSORBOARD : ", tb_logdir)
     trainer.configure(
         save_path=OPTS.model_path,
         n_valid_per_epoch=n_valid_per_epoch,
         criteria="loss",
         tensorboard_logdir=tb_logdir,
-        clip_norm=1 if OPTS.clipnorm else 0
+        clip_norm=0.1 if OPTS.clipnorm else 0
     )
     # if OPTS.fp16:
     #     from apex import amp
