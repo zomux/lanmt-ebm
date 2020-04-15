@@ -91,6 +91,7 @@ ap.add_argument("--opt_imitation", action="store_true")
 ap.add_argument("--opt_imit_rand_steps", default=1, type=int)
 ap.add_argument("--opt_line_search_c", type=float, default=0.1)
 ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
+ap.add_argument("--opt_cosine", default="T", type=str)
 
 # Decoding options
 ap.add_argument("--opt_Twithout_ebm", action="store_true", help="without using EBM")
@@ -175,8 +176,8 @@ if is_root_node():
         except:
             pass
         if envswitch.who() == "jason":
-            tb_str = "{}_{}_c{}".format(
-                OPTS.targets, OPTS.noise, OPTS.line_search_c)
+            tb_str = "{}_{}".format(
+                OPTS.noise, OPTS.cosine)
             if OPTS.imitation:
                 tb_str += "_imit{}".format(OPTS.imit_rand_steps)
             tb_logdir = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/{}".format(tb_str)
@@ -223,7 +224,7 @@ if OPTS.distill:
     tgt_corpus = distilled_tgt_corpus
 else:
     tgt_corpus = train_tgt_corpus
-n_valid_samples = 5000 if OPTS.finetune else 500
+n_valid_samples = 5000 if OPTS.finetune else 200
 if OPTS.train:
     if envswitch.who() != "shu":
         OPTS.batchtokens = 1024
@@ -273,8 +274,8 @@ if OPTS.scorenet:
         print ("Successfully loaded LANMT: {}".format(lanmt_model_path))
     if torch.cuda.is_available():
         nmt.cuda()
-    from lib_score_matching5 import LatentScoreNetwork5
-    nmt = LatentScoreNetwork5(
+    from lib_score_matching6 import LatentScoreNetwork6
+    nmt = LatentScoreNetwork6(
         nmt,
         hidden_size=OPTS.hiddensz,
         latent_size=OPTS.latentdim,
@@ -283,7 +284,7 @@ if OPTS.scorenet:
         decoder=OPTS.decoder,
         imitation=OPTS.imitation,
         imit_rand_steps=OPTS.imit_rand_steps,
-        line_search_c=OPTS.line_search_c,
+        cosine=OPTS.cosine,
     )
 
 # Training
@@ -310,7 +311,7 @@ if OPTS.train or OPTS.all:
     trainer.configure(
         save_path=OPTS.model_path,
         n_valid_per_epoch=n_valid_per_epoch,
-        criteria="targets_diff_sgd",
+        criteria="cosine_sim",
         comp_fn=max,
         tensorboard_logdir=tb_logdir,
         clip_norm=1 if OPTS.clipnorm else 0
@@ -422,6 +423,7 @@ if OPTS.batch_test:
         OPTS.result_path = OPTS.result_path.replace("lanmt_", "lanmt_pretrain_")
     else:
         model_path = OPTS.model_path
+    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-C_distill_noise-rand_scorenet_tied.pt"
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
@@ -467,7 +469,7 @@ if OPTS.batch_test:
         x = torch.tensor(x)
         if torch.cuda.is_available():
             x = x.cuda()
-        targets = scorenet.translate(x, n_iter=4, lr=0.1, decay=1.0)
+        targets = scorenet.translate(x, n_iter=1)
         target_tokens = targets.cpu().numpy().tolist()
         output_tokens.extend(target_tokens)
         sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
@@ -492,7 +494,7 @@ if OPTS.batch_test:
 if OPTS.evaluate or OPTS.all:
     # Post-processing
     if is_root_node():
-        hyp_path = "/tmp/{}_{}_{}_{}.txt".format(OPTS.noise, OPTS.targets, OPTS.imitation, OPTS.imit_rand_steps)
+        hyp_path = "/tmp/{}_{}_{}.txt".format(OPTS.noise, OPTS.targets, OPTS.cosine)
         result_path = OPTS.result_path
         with open(hyp_path, "w") as outf:
             for line in open(result_path):
