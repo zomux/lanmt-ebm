@@ -91,6 +91,8 @@ ap.add_argument("--opt_imitation", action="store_true")
 ap.add_argument("--opt_imit_rand_steps", default=1, type=int)
 ap.add_argument("--opt_line_search_c", type=float, default=0.1)
 ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
+ap.add_argument("--opt_modeltype", default="realgrad", type=str)
+ap.add_argument("--opt_ebmtype", default="transformer", type=str)
 ap.add_argument("--opt_cosine", default="T", type=str)
 
 # Decoding options
@@ -274,8 +276,13 @@ if OPTS.scorenet:
         print ("Successfully loaded LANMT: {}".format(lanmt_model_path))
     if torch.cuda.is_available():
         nmt.cuda()
-    from lib_score_matching6 import LatentScoreNetwork6
-    nmt = LatentScoreNetwork6(
+    if envswitch.who() == "shu":
+        from lib_score_matching5_shu import LatentScoreNetwork5
+        ScoreNet = LatentScoreNetwork5
+    else:
+        from lib_score_matching6 import LatentScoreNetwork6
+        ScoreNet = LatentScoreNetwork6
+    nmt = ScoreNet(
         nmt,
         hidden_size=OPTS.hiddensz,
         latent_size=OPTS.latentdim,
@@ -295,7 +302,7 @@ if OPTS.train or OPTS.all:
         scheduler = SimpleScheduler(max_epoch=1)
     elif OPTS.scorenet:
         n_valid_per_epoch = 10
-        scheduler = SimpleScheduler(max_epoch=1 if envswitch.who() == "shu" else 20)
+        scheduler = SimpleScheduler(max_epoch=2 if envswitch.who() == "shu" else 20)
     else:
         scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
     if OPTS.scorenet and False:
@@ -307,14 +314,15 @@ if OPTS.train or OPTS.all:
         scheduler=scheduler, multigpu=gpu_num > 1,
         using_horovod=horovod_installed)
     OPTS.trainer = trainer
-    print ("TENSORBOARD : ", tb_logdir)
+    if is_root_node():
+        print("TENSORBOARD : ", tb_logdir)
     trainer.configure(
         save_path=OPTS.model_path,
         n_valid_per_epoch=n_valid_per_epoch,
         criteria="cosine_sim",
         comp_fn=max,
         tensorboard_logdir=tb_logdir,
-        clip_norm=1 if OPTS.clipnorm else 0
+        clip_norm=0.1 if OPTS.clipnorm else 0
     )
     # if OPTS.fp16:
     #     from apex import amp
