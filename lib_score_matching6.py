@@ -121,6 +121,7 @@ class LatentScoreNetwork6(Transformer):
         # z : [bsz, y_length, lat_size]
         y_length = y_mask.sum(1).float()
         scores = []
+        lrs = [0.3, 0.1]
         for idx in range(n_iter):
             z = z.detach().clone()
             z.requires_grad = True
@@ -135,7 +136,7 @@ class LatentScoreNetwork6(Transformer):
             score_norm = (score ** 2) * y_mask[:, :, None]
             score_norm = score_norm.sum(2).sum(1).sqrt()
             multiplier = magnitude * y_length.sqrt() / score_norm
-            score = score * multiplier[:, None, None]
+            score = score * multiplier[:, None, None] * lrs[idx]
 
             z = z + score
         return z, scores
@@ -251,7 +252,7 @@ class LatentScoreNetwork6(Transformer):
         # Predict length
         x_lens = x_mask.sum(1)
         delta = lanmt.predict_length(x_states, x_mask)
-        y_lens = delta + x_lens
+        y_lens = delta.long() + x_lens.long()
         # y_lens = x_lens
         y_max_len = torch.max(y_lens.long()).item()
         batch_size = list(x_states.shape)[0]
@@ -266,7 +267,7 @@ class LatentScoreNetwork6(Transformer):
         if OPTS.Twithout_ebm:
             z_ = z
         else:
-            z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter).detach()
+            z_, _ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter)
 
         logits = self.get_logits(z_, y_mask, x_states, x_mask)
         y_pred = logits.argmax(-1)

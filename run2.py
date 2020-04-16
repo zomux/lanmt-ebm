@@ -424,6 +424,7 @@ if OPTS.batch_test:
     else:
         model_path = OPTS.model_path
     model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-C_distill_noise-rand_scorenet_tied.pt"
+    #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_noise-rand_scorenet_tied.pt"
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
@@ -469,7 +470,7 @@ if OPTS.batch_test:
         x = torch.tensor(x)
         if torch.cuda.is_available():
             x = x.cuda()
-        targets = scorenet.translate(x, n_iter=1)
+        targets = scorenet.translate(x, n_iter=2)
         target_tokens = targets.cpu().numpy().tolist()
         output_tokens.extend(target_tokens)
         sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
