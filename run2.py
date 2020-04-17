@@ -106,6 +106,8 @@ ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient n
 ap.add_argument("--opt_modeltype", default="realgrad", type=str)
 ap.add_argument("--opt_ebmtype", default="transformer", type=str)
 ap.add_argument("--opt_cosine", default="T", type=str)
+ap.add_argument("--opt_modelclass", default="", type=str)
+ap.add_argument("--opt_corrupt", action="store_true")
 
 # Decoding options
 ap.add_argument("--opt_Twithout_ebm", action="store_true", help="without using EBM")
@@ -285,12 +287,17 @@ if OPTS.scorenet:
         print ("Successfully loaded LANMT: {}".format(lanmt_model_path))
     if torch.cuda.is_available():
         nmt.cuda()
-    if envswitch.who() == "shu":
+    from lib_score_matching6 import LatentScoreNetwork6
+    ScoreNet = LatentScoreNetwork6
+    # Force to use a specified network
+    if OPTS.modelclass == "shunet5":
         from lib_score_matching5_shu import LatentScoreNetwork5
         ScoreNet = LatentScoreNetwork5
-    else:
-        from lib_score_matching6 import LatentScoreNetwork6
+    if OPTS.modelclass == "shunet6":
+        from lib_score_matching6_shu import LatentScoreNetwork6
         ScoreNet = LatentScoreNetwork6
+
+
     nmt = ScoreNet(
         nmt,
         hidden_size=OPTS.hiddensz,
@@ -311,7 +318,7 @@ if OPTS.train or OPTS.all:
         scheduler = SimpleScheduler(max_epoch=1)
     elif OPTS.scorenet:
         n_valid_per_epoch = 10
-        scheduler = SimpleScheduler(max_epoch=2 if envswitch.who() == "shu" else 50)
+        scheduler = SimpleScheduler(max_epoch=5 if envswitch.who() == "shu" else 50)
     else:
         scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
     if OPTS.scorenet and False:
@@ -397,7 +404,7 @@ if OPTS.test or OPTS.all:
             start_time = time.time()
             # with torch.no_grad() if not OPTS.scorenet else nullcontext():
                 # Predict latent and target words from prior
-            targets = scorenet.translate(x, n_iter=4, lr=0.5, decay=1.)
+            targets = scorenet.translate(x, n_iter=4)
             target_tokens = targets.cpu().numpy()[0].tolist()
             if targets is None:
                 target_tokens = [2, 2, 2]

@@ -123,7 +123,6 @@ class LatentScoreNetwork6(Transformer):
         # z : [bsz, y_length, lat_size]
         y_length = y_mask.sum(1).float()
         scores = []
-        lrs = [0.3, 0.1]
         for idx in range(n_iter):
             z = z.detach().clone()
             z.requires_grad = True
@@ -138,7 +137,7 @@ class LatentScoreNetwork6(Transformer):
             score_norm = (score ** 2) * y_mask[:, :, None]
             score_norm = score_norm.sum(2).sum(1).sqrt()
             multiplier = magnitude * y_length.sqrt() / score_norm
-            score = score * multiplier[:, None, None] * lrs[idx]
+            score = score * multiplier[:, None, None]
 
             z = z + score
         return z, scores
@@ -190,50 +189,40 @@ class LatentScoreNetwork6(Transformer):
         x_states = lanmt.x_encoder(x_states, x_mask)
         y_length = y_mask.sum(1).float()
 
-        p_prob = lanmt.compute_prior(y_mask, x_states, x_mask)
-        p_mean, p_stddev = p_prob[..., :latent_dim], F.softplus(p_prob[..., latent_dim:])
-        z_ini = p_mean
-        if self.training:
-            stddev = p_stddev * torch.randn_like(p_stddev)
-            if self.noise == "rand":
-                stddev = stddev * np.random.random_sample()
-            z_ini += stddev
-
-        z_ini = z_ini.detach().clone()
-        z_ini.requires_grad = True
-        z_fin = self.delta_refine(z_ini, y_mask, x_states, x_mask)
-        z_diff = (z_fin - z_ini).detach() # [bsz, targets_length, lat_size]
-        if OPTS.corrupt:
-            with torch.no_grad():
-                # logits = self.get_logits(z_fin, y_mask, x_states, x_mask)
-                # y_delta = logits.argmax(-1)
-                y_noise, _ = random_token_corruption(y, self._tgt_vocab_size, 0.2)
-                z_noise = self.nmt().compute_posterior(y_noise, y_mask, x_states, x_mask)
-                z_fin = self.nmt().compute_posterior(y, y_mask, x_states, x_mask)
-                z_fin = z_fin[:, :, :latent_dim]
-                z_ini = z_noise[:, :, :latent_dim]
-                z_diff = (z_fin - z_ini).detach()
-            z_ini.requires_grad_(True)
+        assert OPTS.corrupt
+        with torch.no_grad():
+            # logits = self.get_logits(z_fin, y_mask, x_states, x_mask)
+            # y_delta = logits.argmax(-1)
+            y_noise, _ = random_token_corruption(y, self._tgt_vocab_size, 0.2)
+            z_noise = self.nmt().compute_posterior(y_noise, y_mask, x_states, x_mask)
+            z_fin = self.nmt().compute_posterior(y, y_mask, x_states, x_mask)
+            z_fin = z_fin[:, :, :latent_dim]
+            z_ini = z_noise[:, :, :latent_dim]
+            z_diff = (z_fin - z_ini).detach()
+        z_ini.requires_grad_(True)
 
         energy = self.compute_energy(z_ini, y_mask, x_states, x_mask) # [bsz]
         dummy = torch.ones_like(energy)
         dummy.requires_grad = True
         grad = autograd.grad(energy, z_ini, create_graph=True, grad_outputs=dummy)
+        import pdb;pdb.set_trace()
         score = grad[0] # [bsz, targets_length, lat_size]
-        loss_direction = self.cosine_loss(score, z_diff, y_mask) # [bsz]
-
         magnitude = self.compute_magnitude(z_ini, y_mask, x_states, x_mask) # [bsz]
         z_diff_norm = (z_diff ** 2) * y_mask[:, :, None]
         z_diff_norm = z_diff_norm.sum(2).sum(1).sqrt() / y_length.sqrt() # euclidean norm normalized over length
         loss_magnitude = (magnitude - z_diff_norm) ** 2
 
         loss = loss_magnitude + loss_direction
+
         loss = loss.mean(0)
         score_map = {"loss": loss}
         energy, dummy, score, grad = None, None, None, None
 
         if not self.training or self._mycnt % 50 == 0:
-            score_map["cosine_sim"] = 1 - loss_direction.mean()
+            z_clean = p_mean
+            z_sgd, scores = self.energy_sgd(
+                z_clean, y_mask, x_states, x_mask, n_iter=1)
+            score_map["cosine_sim"] = 1 - self.cosine_loss(z_diff, scores[0], y_mask).mean()
             score_map["z_ini_norm"] = mean_bt(z_ini.norm(dim=2), y_mask)
             score_map["z_fin_norm"] = mean_bt(z_fin.norm(dim=2), y_mask)
             score_map["z_diff_norm"] = mean_bt(z_diff.norm(dim=2), y_mask)
@@ -261,7 +250,7 @@ class LatentScoreNetwork6(Transformer):
         # Predict length
         x_lens = x_mask.sum(1)
         delta = lanmt.predict_length(x_states, x_mask)
-        y_lens = delta.long() + x_lens.long()
+        y_lens = delta + x_lens
         # y_lens = x_lens
         y_max_len = torch.max(y_lens.long()).item()
         batch_size = list(x_states.shape)[0]
@@ -276,7 +265,8 @@ class LatentScoreNetwork6(Transformer):
         if OPTS.Twithout_ebm:
             z_ = z
         else:
-            z_, _ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter)
+            z_, scores = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter)
+            z_ = z_.detach()
 
         logits = self.get_logits(z_, y_mask, x_states, x_mask)
         y_pred = logits.argmax(-1)
