@@ -52,16 +52,10 @@ envswitch.register(
     )
 )
 envswitch.register(
-    "jason", "lanmt_path",
-    os.path.join(HOME_DIR,
-        "checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
-    )
+    "jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
 )
 envswitch.register(
-    "jason_prince", "lanmt_path",
-    os.path.join(HOME_DIR,
-        "checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
-    )
+    "jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoint_lanmt/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
 )
 
 ap = ArgumentParser()
