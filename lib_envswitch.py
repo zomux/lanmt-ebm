@@ -17,6 +17,8 @@ class EnvSwitcher(object):
         hostname = socket.gethostname()
         if "abci" in hostname:
             return "shu"
+        elif "gpu-" in hostname:
+            return "jason_prince"
         else:
             return "jason"
 
@@ -31,7 +33,6 @@ class EnvSwitcher(object):
             return self.var_map[(owner, key)]
         else:
             return default
-
 
 if "envswitch" not in OPTS:
     OPTS.envswitch = EnvSwitcher()

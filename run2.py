@@ -33,22 +33,34 @@ from lib_envswitch import envswitch
 from datasets import get_dataset_paths
 
 DATA_ROOT = "/misc/vlgscratch4/ChoGroup/jason/corpora/iwslt/iwslt16_ende"
-PRETRAINED_MODEL_MAP = {
-    "wmt14_ende": "{}/shu_trained_wmt14_ende.pt".format(DATA_ROOT),
-    "aspec_jaen": "{}/shu_trained_aspec_jaen.pt".format(DATA_ROOT),
-}
 TRAINING_MAX_TOKENS = 60
 
 # Shu paths
-envswitch.register(
-    "shu", "data_root",
-    "{}/data/wmt14_ende_fair".format(os.getenv("HOME"))
-)
+envswitch.register("shu", "data_root", "{}/data/wmt14_ende_fair".format(os.getenv("HOME")))
+envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/iwslt/iwslt16_ende")
+envswitch.register("jason", "data_root", "/misc/vlgscratch4/ChoGroup/jason/corpora/iwslt/iwslt16_ende")
+
+envswitch.register("jason_prince", "home_dir", "/scratch/yl1363/lanmt-ebm")
+envswitch.register("jason", "home_dir", "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm")
+
 DATA_ROOT = envswitch.load("data_root", default=DATA_ROOT)
+HOME_DIR = envswitch.load("home_dir", default=DATA_ROOT)
 envswitch.register(
     "shu", "lanmt_path",
     os.path.join(DATA_ROOT,
         "lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt14_fair_ende_fastanneal_longertrain.pt"
+    )
+)
+envswitch.register(
+    "jason", "lanmt_path",
+    os.path.join(HOME_DIR,
+        "checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
+    )
+)
+envswitch.register(
+    "jason_prince", "lanmt_path",
+    os.path.join(HOME_DIR,
+        "checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
     )
 )
 
@@ -143,6 +155,9 @@ if envswitch.who() == "shu":
     OPTS.fixbug1 = True
     OPTS.fixbug2 = True
 
+if envswitch.who() == "jason_prince":
+    OPTS.model_path = os.path.join(HOME_DIR, "checkpoints/lanmt.pt")
+    OPTS.result_path = os.path.join(HOME_DIR, "checkpoints/lanmt.result")
 
 # Determine the number of GPUs to use
 horovod_installed = importlib.util.find_spec("horovod") is not None
@@ -177,12 +192,11 @@ if is_root_node():
             OPTS.trains_task = task
         except:
             pass
-        if envswitch.who() == "jason":
-            tb_str = "{}_{}".format(
-                OPTS.noise, OPTS.cosine)
+        if envswitch.who() != "shu":
+            tb_str = "{}_{}".format(OPTS.noise, OPTS.cosine)
             if OPTS.imitation:
                 tb_str += "_imit{}".format(OPTS.imit_rand_steps)
-            tb_logdir = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/{}".format(tb_str)
+            tb_logdir = envswitch.load("home_dir") + "/tensorboard/{}".format(tb_str)
             for logdir in [tb_logdir+"_train", tb_logdir+"_dev"]:
                 if not os.path.exists(logdir):
                     os.mkdir(logdir)
@@ -264,12 +278,7 @@ lanmt_options.update(dict(
 nmt = LANMTModel2(**lanmt_options)
 if OPTS.scorenet:
     OPTS.shard = 0
-    #lanmt_model_path = OPTS.model_path.replace("_scorenet", "")
-    #lanmt_model_path = lanmt_model_path.replace("_denoise", "")
-    #lanmt_model_path = lanmt_model_path.replace("_noise-0.3", "")
-    lanmt_model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
-    #lanmt_model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_finetune_tied.pt"
-    lanmt_model_path = envswitch.load("lanmt_path", lanmt_model_path)
+    lanmt_model_path = envswitch.load("lanmt_path")
     assert os.path.exists(lanmt_model_path)
     nmt.load(lanmt_model_path)
     if is_root_node():
@@ -349,15 +358,7 @@ if OPTS.test or OPTS.all:
     if OPTS.Tteacher_rescore:
         assert os.path.exists(pretrained_autoregressive_path)
         load_rescoring_transformer(basic_options, pretrained_autoregressive_path)
-    # Load trained model
-    if OPTS.use_pretrain:
-        if OPTS.dtok not in PRETRAINED_MODEL_MAP:
-            print("The model for {} doesn't exist".format(OPTS.dtok))
-        model_path = PRETRAINED_MODEL_MAP[OPTS.dtok]
-        print("loading pretrained model in {}".format(model_path))
-        OPTS.result_path = OPTS.result_path.replace("lanmt_", "lanmt_pretrain_")
-    else:
-        model_path = OPTS.model_path
+    model_path = OPTS.model_path
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
@@ -423,14 +424,7 @@ if OPTS.batch_test:
     if OPTS.Tlatent_search:
         print("--opt_Tlatent_search is not supported in batch test mode right now. Try to implement it.")
     # Load trained model
-    if OPTS.use_pretrain:
-        if OPTS.dtok not in PRETRAINED_MODEL_MAP:
-            print("The model for {} doesn't exist".format(OPTS.dtok))
-        model_path = PRETRAINED_MODEL_MAP[OPTS.dtok]
-        print("loading pretrained model in {}".format(model_path))
-        OPTS.result_path = OPTS.result_path.replace("lanmt_", "lanmt_pretrain_")
-    else:
-        model_path = OPTS.model_path
+    model_path = OPTS.model_path
     model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-C_distill_noise-rand_scorenet_tied.pt"
     #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_noise-rand_scorenet_tied.pt"
     if not os.path.exists(model_path):
