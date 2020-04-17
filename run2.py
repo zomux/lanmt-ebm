@@ -229,7 +229,7 @@ else:
 n_valid_samples = 5000 if OPTS.finetune else 200
 if OPTS.train:
     if envswitch.who() != "shu":
-        OPTS.batchtokens = 1024
+        OPTS.batchtokens = 2048
     dataset = MTDataset(
         src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
         src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
@@ -302,7 +302,7 @@ if OPTS.train or OPTS.all:
         scheduler = SimpleScheduler(max_epoch=1)
     elif OPTS.scorenet:
         n_valid_per_epoch = 10
-        scheduler = SimpleScheduler(max_epoch=2 if envswitch.who() == "shu" else 20)
+        scheduler = SimpleScheduler(max_epoch=2 if envswitch.who() == "shu" else 50)
     else:
         scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
     if OPTS.scorenet and False:

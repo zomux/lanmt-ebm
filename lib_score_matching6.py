@@ -215,16 +215,12 @@ class LatentScoreNetwork6(Transformer):
         loss_magnitude = (magnitude - z_diff_norm) ** 2
 
         loss = loss_magnitude + loss_direction
-
         loss = loss.mean(0)
         score_map = {"loss": loss}
         energy, dummy, score, grad = None, None, None, None
 
         if not self.training or self._mycnt % 50 == 0:
-            z_clean = p_mean
-            z_sgd, scores = self.energy_sgd(
-                z_clean, y_mask, x_states, x_mask, n_iter=1)
-            score_map["cosine_sim"] = 1 - self.cosine_loss(z_diff, scores[0], y_mask).mean()
+            score_map["cosine_sim"] = 1 - loss_direction.mean()
             score_map["z_ini_norm"] = mean_bt(z_ini.norm(dim=2), y_mask)
             score_map["z_fin_norm"] = mean_bt(z_fin.norm(dim=2), y_mask)
             score_map["z_diff_norm"] = mean_bt(z_diff.norm(dim=2), y_mask)
