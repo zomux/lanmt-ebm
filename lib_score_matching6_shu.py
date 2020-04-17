@@ -91,7 +91,7 @@ class LatentScoreNetwork6(Transformer):
         energy = self.energy_transformer(h, y_mask, x_states, x_mask)  # [bsz, y_length, hid_size]
         energy_states = energy * y_mask[:, :, None]
         energy_states = self.energy_conv(energy_states, y_mask)
-        import pdb;pdb.set_trace()
+        energy_states = energy_states - (1 - y_mask)[:, :, None] * 999.
         energy_states = energy_states.max(dim=1)[0]
         energy = self.energy_linear(energy_states)  # [bsz, 1]
         return energy[:, 0]
