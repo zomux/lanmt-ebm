@@ -91,6 +91,7 @@ class LatentScoreNetwork6(Transformer):
         energy = self.energy_transformer(h, y_mask, x_states, x_mask)  # [bsz, y_length, hid_size]
         energy_states = energy * y_mask[:, :, None]
         energy_states = self.energy_conv(energy_states, y_mask)
+        import pdb;pdb.set_trace()
         energy_states = energy_states.max(dim=1)[0]
         energy = self.energy_linear(energy_states)  # [bsz, 1]
         return energy[:, 0]
@@ -188,38 +189,24 @@ class LatentScoreNetwork6(Transformer):
         x_states = lanmt.x_encoder(x_states, x_mask)
         y_length = y_mask.sum(1).float()
 
-        p_prob = lanmt.compute_prior(y_mask, x_states, x_mask)
-        p_mean, p_stddev = p_prob[..., :latent_dim], F.softplus(p_prob[..., latent_dim:])
-        z_ini = p_mean
-        if self.training:
-            stddev = p_stddev * torch.randn_like(p_stddev)
-            if self.noise == "rand":
-                stddev = stddev * np.random.random_sample()
-            z_ini += stddev
-
-        z_ini = z_ini.detach().clone()
-        z_ini.requires_grad = True
-        z_fin = self.delta_refine(z_ini, y_mask, x_states, x_mask)
-        z_diff = (z_fin - z_ini).detach() # [bsz, targets_length, lat_size]
-        if OPTS.corrupt:
-            with torch.no_grad():
-                # logits = self.get_logits(z_fin, y_mask, x_states, x_mask)
-                # y_delta = logits.argmax(-1)
-                y_noise, _ = random_token_corruption(y, self._tgt_vocab_size, 0.2)
-                z_noise = self.nmt().compute_posterior(y_noise, y_mask, x_states, x_mask)
-                z_fin = self.nmt().compute_posterior(y, y_mask, x_states, x_mask)
-                z_fin = z_fin[:, :, :latent_dim]
-                z_ini = z_noise[:, :, :latent_dim]
-                z_diff = (z_fin - z_ini).detach()
-            z_ini.requires_grad_(True)
+        assert OPTS.corrupt
+        with torch.no_grad():
+            # logits = self.get_logits(z_fin, y_mask, x_states, x_mask)
+            # y_delta = logits.argmax(-1)
+            y_noise, _ = random_token_corruption(y, self._tgt_vocab_size, 0.2)
+            z_noise = self.nmt().compute_posterior(y_noise, y_mask, x_states, x_mask)
+            z_fin = self.nmt().compute_posterior(y, y_mask, x_states, x_mask)
+            z_fin = z_fin[:, :, :latent_dim]
+            z_ini = z_noise[:, :, :latent_dim]
+            z_diff = (z_fin - z_ini).detach()
+        z_ini.requires_grad_(True)
 
         energy = self.compute_energy(z_ini, y_mask, x_states, x_mask) # [bsz]
         dummy = torch.ones_like(energy)
         dummy.requires_grad = True
         grad = autograd.grad(energy, z_ini, create_graph=True, grad_outputs=dummy)
+        import pdb;pdb.set_trace()
         score = grad[0] # [bsz, targets_length, lat_size]
-        loss_direction = self.cosine_loss(score, z_diff, y_mask) # [bsz]
-
         magnitude = self.compute_magnitude(z_ini, y_mask, x_states, x_mask) # [bsz]
         z_diff_norm = (z_diff ** 2) * y_mask[:, :, None]
         z_diff_norm = z_diff_norm.sum(2).sum(1).sqrt() / y_length.sqrt() # euclidean norm normalized over length
