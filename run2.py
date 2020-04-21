@@ -96,6 +96,7 @@ ap.add_argument("--opt_ebmtype", default="transformer", type=str)
 ap.add_argument("--opt_cosine", default="T", type=str)
 ap.add_argument("--opt_modelclass", default="", type=str)
 ap.add_argument("--opt_corrupt", action="store_true")
+ap.add_argument("--opt_decgrad", action="store_true", help="use decoder gradient as target of score matching")
 
 # Decoding options
 ap.add_argument("--opt_Twithout_ebm", action="store_true", help="without using EBM")
