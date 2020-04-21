@@ -102,6 +102,7 @@ ap.add_argument("--opt_ebmtype", default="transformer", type=str)
 ap.add_argument("--opt_cosine", default="T", type=str)
 ap.add_argument("--opt_modelclass", default="", type=str)
 ap.add_argument("--opt_corrupt", action="store_true")
+ap.add_argument("--opt_refine_from_mean", action="store_true")
 
 # Decoding options
 ap.add_argument("--opt_Twithout_ebm", action="store_true", help="without using EBM")
@@ -189,7 +190,7 @@ if is_root_node():
         except:
             pass
         if envswitch.who() != "shu":
-            tb_str = "{}_{}".format(OPTS.noise, OPTS.cosine)
+            tb_str = "{}_{}_{}".format(OPTS.noise, OPTS.cosine, OPTS.modeltype)
             if OPTS.imitation:
                 tb_str += "_imit{}".format(OPTS.imit_rand_steps)
             tb_logdir = envswitch.load("home_dir") + "/tensorboard/{}".format(tb_str)
@@ -302,6 +303,8 @@ if OPTS.scorenet:
         imitation=OPTS.imitation,
         imit_rand_steps=OPTS.imit_rand_steps,
         cosine=OPTS.cosine,
+        refine_from_mean=OPTS.refine_from_mean,
+        modeltype=OPTS.modeltype
     )
 
 # Training
@@ -312,13 +315,14 @@ if OPTS.train or OPTS.all:
         scheduler = SimpleScheduler(max_epoch=1)
     elif OPTS.scorenet:
         n_valid_per_epoch = 10
-        scheduler = SimpleScheduler(max_epoch=5 if envswitch.who() == "shu" else 50)
+        #scheduler = SimpleScheduler(max_epoch=5 if envswitch.who() == "shu" else 200)
+        scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
     else:
         scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
     if OPTS.scorenet and False:
         optimizer = optim.SGD(nmt.parameters(), lr=0.001)
     else:
-        optimizer = optim.Adam(nmt.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-4)
+        optimizer = optim.Adam(nmt.parameters(), lr=0.0003, betas=(0.9, 0.98), eps=1e-4)
     trainer = MTTrainer(
         nmt, dataset, optimizer,
         scheduler=scheduler, multigpu=gpu_num > 1,
@@ -426,8 +430,9 @@ if OPTS.batch_test:
         print("--opt_Tlatent_search is not supported in batch test mode right now. Try to implement it.")
     # Load trained model
     model_path = OPTS.model_path
-    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-C_distill_noise-rand_scorenet_tied.pt"
-    #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_noise-rand_scorenet_tied.pt"
+    #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-C_distill_noise-rand_scorenet_tied.pt"
+    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_modeltype-fakegrad_noise-rand_scorenet_tied.pt"
+    #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints_all/checkpoints_0417/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_noise-rand_scorenet_tied.pt"
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
@@ -473,7 +478,7 @@ if OPTS.batch_test:
         x = torch.tensor(x)
         if torch.cuda.is_available():
             x = x.cuda()
-        targets = scorenet.translate(x, n_iter=2)
+        targets = scorenet.translate(x, n_iter=1) # NOTE
         target_tokens = targets.cpu().numpy().tolist()
         output_tokens.extend(target_tokens)
         sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))

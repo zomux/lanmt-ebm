@@ -26,128 +26,158 @@ from nmtlab.utils import OPTS
 
 from lib_envswitch import envswitch
 
+class EnergyFn(nn.Module):
+    def __init__(self, D_lat, D_hid, dropout_ratio=0.1, D_mlp_hid=100, n_layers=3, positive=False):
+        super(EnergyFn, self).__init__()
+        self.lat2hid = nn.Linear(
+            D_lat, D_hid)
+        self.transformer = TransformerCrossEncoder(
+            embed_layer=None, size=D_hid, n_layers=n_layers, dropout_ratio=dropout_ratio)
+        self.conv = ConvolutionalEncoder(
+            embed_layer=None, size=D_hid, n_layers=n_layers, dropout_ratio=dropout_ratio,
+            cross_attention=False, skip_connect=False)
+        self.hid2energy = nn.Sequential(
+            nn.Dropout(p=dropout_ratio),
+            nn.Linear(D_hid, D_mlp_hid),
+            nn.ELU(),
+            nn.Dropout(p=dropout_ratio),
+            nn.Linear(D_mlp_hid, 1)
+        )
+        self.positive = positive
+
+    def forward(self, z, y_mask, x_states, x_mask):
+        # input : [batch_size, targets_length, latent_size]
+        # output : [batch_size]
+        h = self.lat2hid(z)
+        energy = self.transformer(h, y_mask, x_states, x_mask)
+        energy = energy * y_mask[:, :, None]
+        energy = self.conv(energy, y_mask)
+        energy = energy + (1 - y_mask)[:, :, None] * (-999999.)
+        energy = energy.max(dim=1)[0]
+        energy = self.hid2energy(energy)
+        if self.positive:
+            energy = F.softplus(energy)
+        return energy[:, 0]
+
+    def score(self, z, y_mask, x_states, x_mask, create_graph=True):
+        energy = self.forward(z, y_mask, x_states, x_mask)
+        dummy = torch.ones_like(energy)
+        dummy.requires_grad = True
+        grad = autograd.grad(energy, z, create_graph=create_graph, grad_outputs=dummy)
+        score = grad[0] # [bsz, length, latent_dim]
+        return score
+
+class ScoreFn(nn.Module):
+    def __init__(self, D_lat, D_hid, D_fin, dropout_ratio=0.1, D_mlp_hid=100, n_layers=4, positive=False):
+        super(ScoreFn, self).__init__()
+        self.lat2hid = nn.Linear(
+            D_lat, D_hid)
+        self.transformer = TransformerCrossEncoder(
+            embed_layer=None, size=D_hid, n_layers=n_layers, dropout_ratio=dropout_ratio)
+        self.hid2score = nn.Linear(
+            D_hid, D_fin)
+        self.positive = positive
+
+    def forward(self, z, y_mask, x_states, x_mask):
+        # input : [batch_size, targets_length, latent_size]
+        # output : [batch_size, targets_length, final_size]
+        h = self.lat2hid(z)
+        score = self.transformer(h, y_mask, x_states, x_mask)
+        score = self.hid2score(score)
+        if self.positive:
+            score = F.softplus(score)
+        return score * y_mask[:, :, None]
+
+    def score(self, z, y_mask, x_states, x_mask):
+        return self.forward(z, y_mask, x_states, x_mask)
+
 class LatentScoreNetwork6(Transformer):
 
     def __init__(
         self, lanmt_model, hidden_size=256, latent_size=8,
         noise=0.1, targets="logpy", decoder="fixed", imitation=False,
-        imit_rand_steps=1, cosine="T", enable_valid_grad=True):
+        imit_rand_steps=1, cosine="T", refine_from_mean=False,
+        modeltype="realgrad", enable_valid_grad=True):
         """
         Args:
             lanmt_model(LANMTModel)
         """
-        self.imitation = imitation
-        self.imit_rand_steps = imit_rand_steps
         self._hidden_size = hidden_size
         self._latent_size = latent_size
         self.set_stepwise_training(False)
+
+        self._mycnt = 0
+        self.imitation = imitation
+        self.imit_rand_steps = imit_rand_steps
+        self.cosine = cosine
+        self.noise = noise
+        self.refine_from_mean = refine_from_mean
+        self.modeltype = modeltype
+        assert self.modeltype in ["realgrad", "fakegrad"]
+        assert cosine in ["C", "TC"]
+        # TC : maximize cosine_sim(z_diff, score, dims=[1,2])
+        #  C : maximize cosine_sim(z_diff, score1, dims=[2])
+        #      maximize cosine_sim(z_diff.norm(2), score2, dims=[1])
+
         super(LatentScoreNetwork6, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         lanmt_model.train(False)
         self._lanmt = [lanmt_model]
         self.enable_valid_grad = True
         self.train()
-        self._mycnt = 0
-        self.cosine_loss = cosine_loss_c if cosine=="C" else cosine_loss_tc
-
-        self.noise = noise
-
-        if envswitch.who() == "shu":
-            main_dir = "{}/data/wmt14_ende_fair/tensorboard".format(os.getenv("HOME"))
-        else:
-            main_dir = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/tensorboard/"
 
     def prepare(self):
-        self.energy_lat2hid = nn.Linear(self._latent_size, self._hidden_size)
-        self.energy_transformer = TransformerCrossEncoder(
-            embed_layer=None, size=self._hidden_size, n_layers=3, dropout_ratio=0.1)
-        self.energy_conv = ConvolutionalEncoder(
-            embed_layer=None, size=self._hidden_size, n_layers=3, dropout_ratio=0.1,
-            cross_attention=False, skip_connect=False)
-        self.energy_linear = nn.Sequential(
-            nn.Dropout(p=0.1),
-            nn.Linear(self._hidden_size, 100),
-            nn.ELU(),
-            nn.Dropout(p=0.1),
-            nn.Linear(100, 1)
-        )
+        D_lat, D_hid = self._latent_size, self._hidden_size
+        if self.modeltype == "realgrad": # Learn the energy function
+            self.score_fn = EnergyFn(D_lat, D_hid, positive=False)
+        elif self.modeltype == "fakegrad": # Directly learn the gradient of the energy
+            self.score_fn = ScoreFn(D_lat, D_hid, D_lat, positive=False)
 
-        self.magnitude_lat2hid = nn.Linear(self._latent_size, self._hidden_size)
-        self.magnitude_transformer = TransformerCrossEncoder(
-            embed_layer=None, size=self._hidden_size, n_layers=3, dropout_ratio=0.1)
-        self.magnitude_conv = ConvolutionalEncoder(
-            embed_layer=None, size=self._hidden_size, n_layers=3, dropout_ratio=0.1,
-            cross_attention=False, skip_connect=False)
-        self.magnitude_linear = nn.Sequential(
-            nn.Dropout(p=0.1),
-            nn.Linear(self._hidden_size, 100),
-            nn.ELU(),
-            nn.Dropout(p=0.1),
-            nn.Linear(100, 1)
-        )
+        if self.cosine == "C":
+            # Learn z_diff.norm(2)
+            self.score_fn2 = ScoreFn(D_lat, D_hid, 1, positive=True)
+            self.cosine_loss = cosine_loss_c
+        elif self.cosine == "TC":
+            self.cosine_loss = cosine_loss_tc
 
-    def compute_energy(self, z, y_mask, x_states, x_mask):
-        # z : [bsz, y_length, lat_size]
-        h = self.energy_lat2hid(z)  # [bsz, y_length, hid_size]
-        energy = self.energy_transformer(h, y_mask, x_states, x_mask)  # [bsz, y_length, hid_size]
-        energy_states = energy * y_mask[:, :, None]
-        energy_states = self.energy_conv(energy_states, y_mask)
-        energy_states = energy_states - (1 - y_mask)[:, :, None] * 999.
-        energy_states = energy_states.max(dim=1)[0]
-        energy = self.energy_linear(energy_states)  # [bsz, 1]
-        return energy[:, 0]
+        self.magnitude_fn = EnergyFn(D_lat, D_hid, positive=True) # Learn z_diff.norm(1, 2)
 
-    def compute_magnitude(self, z, y_mask, x_states, x_mask):
-        # z : [bsz, y_length, lat_size]
-        h = self.magnitude_lat2hid(z)  # [bsz, y_length, hid_size]
-        magnitude = self.magnitude_transformer(h, y_mask, x_states, x_mask)  # [bsz, y_length, hid_size]
-        magnitude_states = magnitude * y_mask[:, :, None]
-        magnitude_states = self.magnitude_conv(magnitude_states, y_mask)
-        magnitude_states = magnitude_states.max(dim=1)[0]
-        magnitude = self.magnitude_linear(magnitude_states)  # [bsz, 1]
-        return magnitude[:, 0]
-
-    def delta_refine(self, z, y_mask, x_states, x_mask):
+    def delta_refine(self, z, y_mask, x_states, x_mask, n_iter=1):
         lanmt = self.nmt()
-        hid = lanmt.lat2hid(z)
-        decoder_states = lanmt.decoder(hid, y_mask, x_states, x_mask)
-        logits = lanmt.expander_nn(decoder_states)
-        y_pred = logits.argmax(-1)
-        y_pred = y_pred * y_mask.long()
-        y_states = lanmt.embed_layer(y_pred)
-        q_states = lanmt.q_encoder_xy(y_states, y_mask, x_states, x_mask)
-        q_prob = lanmt.q_hid2lat(q_states)
-        z = q_prob[..., :lanmt.latent_dim]
+        for idx in range(n_iter):
+            hid = lanmt.lat2hid(z)
+            decoder_states = lanmt.decoder(hid, y_mask, x_states, x_mask)
+            logits = lanmt.expander_nn(decoder_states)
+            y_pred = logits.argmax(-1)
+            y_pred = y_pred * y_mask.long()
+            y_states = lanmt.embed_layer(y_pred)
+            q_states = lanmt.q_encoder_xy(y_states, y_mask, x_states, x_mask)
+            q_prob = lanmt.q_hid2lat(q_states)
+            z = q_prob[..., :lanmt.latent_dim]
         return z
 
     def energy_sgd(self, z, y_mask, x_states, x_mask, n_iter):
         # z : [bsz, y_length, lat_size]
         y_length = y_mask.sum(1).float()
-        scores = []
-        lrs = [0.3, 0.1]
+        lrs = [0.60, 0.05]
         for idx in range(n_iter):
             z = z.detach().clone()
             z.requires_grad = True
-            magnitude = self.compute_magnitude(z, y_mask, x_states, x_mask) # [bsz]
+            magnitude = self.magnitude_fn(z, y_mask, x_states, x_mask) # [bsz]
 
-            energy = self.compute_energy(z, y_mask, x_states, x_mask)
-            dummy = torch.ones_like(energy)
-            dummy.requires_grad = True
-            grad = autograd.grad(energy, z, create_graph=False, grad_outputs=dummy)
-            score = grad[0].detach() # [bsz, length, latent_dim]
-            scores.append(score)
+            score = self.score_fn.score(z, y_mask, x_states, x_mask).detach()
             score_norm = (score ** 2) * y_mask[:, :, None]
             score_norm = score_norm.sum(2).sum(1).sqrt()
-            multiplier = magnitude * y_length.sqrt() / score_norm
+            #multiplier = magnitude * y_length.sqrt() / score_norm
+            multiplier = y_length.sqrt() / score_norm
             score = score * multiplier[:, None, None] * lrs[idx]
 
             z = z + score
-        return z, scores
+        return z
 
     def energy_line_search(self, z, y_mask, x_states, x_mask, p_prob, n_iter, c=0.05, tau=0.5):
         # implementation from https://en.wikipedia.org/wiki/Backtracking_line_search
         # hyperparameters : alpha, c, tau taken from the wiki page.
         # z : [bsz, y_length, lat_size]
-        scores = []
         for idx in range(n_iter):
             z_ini = z.detach().clone()
             with torch.no_grad():
@@ -160,8 +190,6 @@ class LatentScoreNetwork6(Transformer):
 
             grad = autograd.grad(energy, z_ini, create_graph=False, grad_outputs=dummy)
             score = grad[0].detach()
-            if idx == 0:
-                scores.append(score)
 
             with torch.no_grad():
                 alpha = 2.0
@@ -174,7 +202,7 @@ class LatentScoreNetwork6(Transformer):
                         z = z_fin
                         break
                     alpha = alpha / 2.0
-        return z, scores
+        return z
 
     def get_logits(self, z, y_mask, x_states, x_mask):
         lanmt = self.nmt()
@@ -198,11 +226,13 @@ class LatentScoreNetwork6(Transformer):
             if self.noise == "rand":
                 stddev = stddev * np.random.random_sample()
             z_ini += stddev
+        with torch.no_grad():
+            z_fin = self.delta_refine(z_ini, y_mask, x_states, x_mask, n_iter=2)
 
         z_ini = z_ini.detach().clone()
         z_ini.requires_grad = True
-        z_fin = self.delta_refine(z_ini, y_mask, x_states, x_mask)
-        z_diff = (z_fin - z_ini).detach() # [bsz, targets_length, lat_size]
+
+        z_diff = (z_fin - z_ini).detach() # [batch_size, targets_length, latent_size]
         if OPTS.corrupt:
             with torch.no_grad():
                 # logits = self.get_logits(z_fin, y_mask, x_states, x_mask)
@@ -215,32 +245,33 @@ class LatentScoreNetwork6(Transformer):
                 z_diff = (z_fin - z_ini).detach()
             z_ini.requires_grad_(True)
 
-        energy = self.compute_energy(z_ini, y_mask, x_states, x_mask) # [bsz]
-        dummy = torch.ones_like(energy)
-        dummy.requires_grad = True
-        grad = autograd.grad(energy, z_ini, create_graph=True, grad_outputs=dummy)
-        score = grad[0] # [bsz, targets_length, lat_size]
-        loss_direction = self.cosine_loss(score, z_diff, y_mask) # [bsz]
+        score = self.score_fn.score(z_ini, y_mask, x_states, x_mask) # [batch_size, targets_length, latent_size]
+        loss_direction = self.cosine_loss(score, z_diff, y_mask) # [batch_size]
+        if self.cosine == "C":
+            z_diff_norm = z_diff.norm(2) # [batch_size, targets_length]
+            pred_norm_1d = self.score_fn2(z_ini, y_mask, x_states, x_mask)[:, :, 0] # [batch_size, targets_length]
+            loss_direction2 = cosine_loss_t(z_diff_norm, pred_norm_1d, y_mask)
 
-        magnitude = self.compute_magnitude(z_ini, y_mask, x_states, x_mask) # [bsz]
+        magnitude = self.magnitude_fn(z_ini, y_mask, x_states, x_mask) # [bsz]
         z_diff_norm = (z_diff ** 2) * y_mask[:, :, None]
         z_diff_norm = z_diff_norm.sum(2).sum(1).sqrt() / y_length.sqrt() # euclidean norm normalized over length
         loss_magnitude = (magnitude - z_diff_norm) ** 2
 
         loss = loss_magnitude + loss_direction
+        if self.cosine == "C":
+            loss += loss_direction2
         loss = loss.mean(0)
         score_map = {"loss": loss}
-        energy, dummy, score, grad = None, None, None, None
 
         if not self.training or self._mycnt % 50 == 0:
             score_map["cosine_sim"] = 1 - loss_direction.mean()
-            score_map["z_ini_norm"] = mean_bt(z_ini.norm(dim=2), y_mask)
-            score_map["z_fin_norm"] = mean_bt(z_fin.norm(dim=2), y_mask)
-            score_map["z_diff_norm"] = mean_bt(z_diff.norm(dim=2), y_mask)
-
             score_map["loss_magnitude"] = loss_magnitude.mean()
             score_map["loss_direction"] = loss_direction.mean()
-
+            score_map["z_diff_norm"] = z_diff_norm.mean()
+            score_map["magnitude"] = magnitude.mean()
+            if self.cosine == "C":
+                score_map["cosine_sim2"] = 1 - loss_direction2.mean()
+                score_map["loss_direction2"] = loss_direction2.mean()
         return score_map
 
     def forward(self, x, y, sampling=False):
@@ -276,7 +307,7 @@ class LatentScoreNetwork6(Transformer):
         if OPTS.Twithout_ebm:
             z_ = z
         else:
-            z_, _ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter)
+            z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter)
 
         logits = self.get_logits(z_, y_mask, x_states, x_mask)
         y_pred = logits.argmax(-1)
@@ -298,9 +329,11 @@ def mean_t(tensor, mask):
 
 def cosine_loss_tc(x1, x2, mask):
     # Compute cosine loss over T and C dimension (ignoring PAD)
-    x1_norm = (x1 ** 2) ** mask[:, :, None]
+    # input : [batch_size, targets_length, latent_size]
+    # output : [batch_size]
+    x1_norm = (x1 ** 2) * mask[:, :, None]
     x1_norm = x1_norm.sum(2).sum(1).sqrt()
-    x2_norm = (x2 ** 2) ** mask[:, :, None]
+    x2_norm = (x2 ** 2) * mask[:, :, None]
     x2_norm = x2_norm.sum(2).sum(1).sqrt()
     num = (x1 * x2) * mask[:, :, None]
     num = num.sum(2).sum(1)
@@ -310,10 +343,27 @@ def cosine_loss_tc(x1, x2, mask):
     return 1 - sim # [bsz]
 
 def cosine_loss_c(x1, x2, mask):
-    # Average across the Time dimension (given a binary mask)
+    # Compute cosine loss over C dimension (ignoring PAD)
+    # input : [batch_size, targets_length, latent_size]
+    # output : [batch_size]
     sim = F.cosine_similarity(x1, x2, dim=2)
     sim = mean_t(sim, mask) # [bsz]
     return 1 - sim
+
+def cosine_loss_t(x1, x2, mask):
+    # Compute cosine loss over T dimension (ignoring PAD)
+    # input : [batch_size, targets_length]
+    # output : [batch_size]
+    x1_norm = (x1 ** 2) * mask
+    x1_norm = x1_norm.sum(1).sqrt()
+    x2_norm = (x2 ** 2) * mask
+    x2_norm = x2_norm.sum(1).sqrt()
+    num = (x1 * x2) * mask
+    num = num.sum(1)
+    denom = x1_norm * x2_norm
+    sim = num / denom
+
+    return 1 - sim # [bsz]
 
 if __name__ == '__main__':
     import sys
