@@ -430,8 +430,8 @@ if OPTS.batch_test:
         print("--opt_Tlatent_search is not supported in batch test mode right now. Try to implement it.")
     # Load trained model
     model_path = OPTS.model_path
-    #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-C_distill_noise-rand_scorenet_tied.pt"
-    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_modeltype-fakegrad_noise-rand_scorenet_tied.pt"
+    #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_modeltype-fakegrad_noise-rand_scorenet_tied.pt"
+    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_noise-rand_scorenet_tied.pt"
     #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints_all/checkpoints_0417/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_noise-rand_scorenet_tied.pt"
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))

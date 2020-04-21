@@ -158,17 +158,18 @@ class LatentScoreNetwork6(Transformer):
     def energy_sgd(self, z, y_mask, x_states, x_mask, n_iter):
         # z : [bsz, y_length, lat_size]
         y_length = y_mask.sum(1).float()
-        lrs = [0.60, 0.05]
+        lrs = [0.80, 0.05]
         for idx in range(n_iter):
             z = z.detach().clone()
             z.requires_grad = True
+
             magnitude = self.magnitude_fn(z, y_mask, x_states, x_mask) # [bsz]
 
             score = self.score_fn.score(z, y_mask, x_states, x_mask).detach()
             score_norm = (score ** 2) * y_mask[:, :, None]
             score_norm = score_norm.sum(2).sum(1).sqrt()
-            #multiplier = magnitude * y_length.sqrt() / score_norm
-            multiplier = y_length.sqrt() / score_norm
+            multiplier = magnitude * y_length.sqrt() / score_norm
+            #multiplier = y_length.sqrt() / score_norm
             score = score * multiplier[:, None, None] * lrs[idx]
 
             z = z + score
