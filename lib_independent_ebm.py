@@ -156,9 +156,10 @@ class IndependentEnergyMT(Transformer):
         if OPTS.losstype == "single":
             loss = (loss_mat * y_mask).sum() / y_mask.sum()
         elif OPTS.losstype == "scorematch":
-            # noise_z, x_states = self.encode(x, x_mask, noise_y, y_mask)
+            noise_z, x_states = self.encode(x, x_mask, noise_y, y_mask)
             target_z, x_states = self.encode(x, x_mask, y, y_mask)
-            noise_z = target_z * 0.
+            noise_z = noise_z + torch.randn_like(target_z)
+            target_z = target_z + torch.randn_like(target_z)
             # logits = self.compute_logits(x_states, x_mask, noise_z, y_mask)
             # noise_ae_loss = self.xent_loss(logits, noise_y, y_mask)
             noise_ae_loss = 0.
