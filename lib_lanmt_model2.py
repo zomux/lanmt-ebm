@@ -221,6 +221,30 @@ class LANMTModel2(Transformer):
         q_prob = self.q_hid2lat(q_states)
         return q_prob
 
+    def compute_logpy(self, logits, y, y_mask):
+        shape = logits.shape
+        nll = F.cross_entropy(
+            logits.view(shape[0] * shape[1], -1),
+            y.view(shape[0] * shape[1]), reduction="none", ignore_index=0)
+        logpy = -1 * nll
+        logpy = logpy.view(shape[0], shape[1])
+        return logpy # [bsz, targets_length]
+
+    def compute_logpz(self, z, y_mask, p_prob):
+        latent_dim = self.latent_dim
+        p_mean, p_stddev = p_prob[..., :latent_dim], F.softplus(p_prob[..., latent_dim:])
+        logpz = -0.5 * ( (z - p_mean) / p_stddev ) ** 2 - torch.log(p_stddev * math.sqrt(2 * math.pi))
+        logpz = logpz.sum(2)
+        return logpz # [bsz, targets_length]
+
+    def compute_logqz(self, z, y, y_mask, x_states, x_mask):
+        latent_dim = self.latent_dim
+        q_prob = self.compute_posterior(y, y_mask, x_states, x_mask)
+        q_mean, q_stddev = q_prob[..., :latent_dim], F.softplus(q_prob[..., latent_dim:])
+        logqz = -0.5 * ( (z - q_mean) / q_stddev ) ** 2 - torch.log(q_stddev * math.sqrt(2 * math.pi))
+        logqz = logqz.sum(2)
+        return logqz # [bsz, targets_length]
+
     def forward(self, x, y, sampling=False, return_code=False):
         """Model training.
         """
@@ -300,22 +324,23 @@ class LANMTModel2(Transformer):
         q_prob = self.compute_posterior(y, y_mask, x_states, x_mask)
         q_mean, q_stddev = q_prob[..., :latent_dim], F.softplus(q_prob[..., latent_dim:])
 
-        likelihood_list = []
+        logpy_list, logpz_list, logqz_list = [], [], []
         for _ in range(20):
             z_q = q_mean + q_stddev * torch.randn_like(q_stddev)
             logits = self.get_logits(z_q, y_mask, x_states, x_mask)
-            likelihood = -1.0 * F.cross_entropy(
-                logits.view(-1, vocab_size),
-                y.view(-1), reduction="none", ignore_index=0)
-            likelihood = likelihood.view(*y_shape)
-            likelihood = likelihood.sum(1) / y_length # [batch_size]
-            likelihood_list.append(likelihood)
+            y_pred = logits.argmax(-1)
+            logpy = self.compute_logpy(logits, y, y_mask)
+            logpz = self.compute_logpz(z_q, y_mask, p_prob)
+            logqz = self.compute_logqz(z_q, y_pred, y_mask, x_states, x_mask)
+            logpy_list.append((logpy * y_mask).sum(1) / y_length)
+            logpz_list.append((logpz * y_mask).sum(1) / y_length)
+            logqz_list.append((logqz * y_mask).sum(1) / y_length)
 
-        kl = self.compute_vae_KL(p_prob, q_prob)
-        kl = (kl * y_mask).sum(1) / y_length
-        mean_likelihood = sum(likelihood_list) / len(likelihood_list)
-        elbo = mean_likelihood - kl
-        return elbo # [batch_size]
+        logpy_ = sum(logpy_list) / 20.0
+        logpz_ = sum(logpz_list) / 20.0
+        logqz_ = sum(logqz_list) / 20.0
+        elbo = logpy_ + logpz_ - logqz_
+        return elbo, logpy_, logpz_, logqz_
 
     def delta_refine(self, z, y_mask, x_states, x_mask, n_iter=1):
         for idx in range(n_iter):

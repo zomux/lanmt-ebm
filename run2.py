@@ -450,7 +450,7 @@ if OPTS.batch_test:
     sorted_line_ids = np.argsort([len(l.split()) for l in lines])
     start_time = time.time()
     output_tokens = []
-    elbos = []
+    elbos, logpys, logpzs, logqzs = [], [], [], []
     i = 0
     while i < len(lines):
         # Make a batch
@@ -474,17 +474,28 @@ if OPTS.batch_test:
         if torch.cuda.is_available():
             x = x.cuda()
         targets = scorenet.translate(x, n_iter=1, step_size=OPTS.Tstep_size)
-        if OPTS.Treport_elbo:
+        if envswitch.who() != "shu" and OPTS.Treport_elbo:
             with torch.no_grad():
-                elbo = nmt.compute_elbo(x, targets)
+                elbo, logpy, logpz, logqz = nmt.compute_elbo(x, targets)
                 elbo = elbo.cpu().numpy().tolist()
+                logpy = logpy.cpu().numpy().tolist()
+                logpz = logpz.cpu().numpy().tolist()
+                logqz = logqz.cpu().numpy().tolist()
                 elbos.extend(elbo)
+                logpys.extend(logpy)
+                logpzs.extend(logpz)
+                logqzs.extend(logqz)
         target_tokens = targets.cpu().numpy().tolist()
         output_tokens.extend(target_tokens)
         sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
         sys.stdout.flush()
-    if OPTS.Treport_elbo:
-        print("ELBO ({}): {:.4f} ".format(len(elbos), np.mean(elbos)))
+    if envswitch.who() != "shu" and OPTS.Treport_elbo:
+        elbo_file_path = os.path.join(HOME_DIR, "elbo_file")
+        elbo_file = open(elbo_file_path, "a")
+        elbo_file.write(
+            "{},{:.4f},{:.4f},{:.4f},{:.4f}\r\n".format(
+            OPTS.Tstep_size, np.mean(logpys), np.mean(logpzs), np.mean(logqzs), np.mean(elbos)))
+        elbo_file.close()
 
     with open(OPTS.result_path, "w") as outf:
         # Record decoding time
@@ -542,3 +553,10 @@ if OPTS.evaluate or OPTS.all:
             from tensorboardX import SummaryWriter
             tb = SummaryWriter(log_dir=tb_logdir, comment="nmtlab")
             tb.add_scalar("BLEU", bleu)
+        if envswitch.who() != "shu":
+            bleu_file_path = os.path.join(HOME_DIR, "bleu_file")
+            bleu_file = open(bleu_file_path, "a")
+            bleu_file.write(
+                "{},{:.4f}\r\n".format(
+                OPTS.Tstep_size, bleu))
+            bleu_file.close()
