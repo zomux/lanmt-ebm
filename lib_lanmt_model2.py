@@ -148,6 +148,8 @@ class LANMTModel2(Transformer):
         return length_scores
 
     def compute_vae_KL(self, p_prob, q_prob):
+        # inputs : [batch_size, targets_length, latent_size]
+        # outputs : [batch_size, targets_length]
         q_mean, q_stddev = q_prob[..., :self.latent_dim], F.softplus(q_prob[..., self.latent_dim:])
         p_mean, p_stddev = p_prob[..., :self.latent_dim], F.softplus(p_prob[..., self.latent_dim:])
 
@@ -276,51 +278,48 @@ class LANMTModel2(Transformer):
             import pdb;pdb.set_trace()
         return score_map
 
-    def measure_ELBO(self, x, y):
+    def compute_elbo(self, x, y, y_mask=None):
         """Measure the ELBO in the inference time."""
+        latent_dim = self.latent_dim
         x_mask = self.to_float(torch.ne(x, 0))
-        y_mask = self.to_float(torch.ne(y, 0))
+        if y_mask == None:
+            y_mask = self.to_float(torch.ne(y, 0))
+        y_length = y_mask.sum(1).float()
         batch_size = list(x.shape)[0]
         y_shape = list(y.shape)
+        vocab_size = self._tgt_vocab_size
 
         # Source sentence hidden states, shared between prior, posterior, decoder.
         x_states = self.embed_layer(x)
         x_states = self.x_encoder(x_states, x_mask)
 
         # Compute p(z|x)
-        pos_states = self.pos_embed_layer(y).expand(y_shape + [self.hidden_size])
-        p_states = self.prior_encoder(pos_states, y_mask, x_states, x_mask)
-        p_prob = self.p_hid2lat(p_states)
+        p_prob = self.compute_prior(y_mask, x_states, x_mask)
 
         # Compute q(z|x,y)
-        y_states = self.embed_layer(y)
-        q_states = self.q_encoder_xy(y_states, y_mask, x_states, x_mask)
-        q_prob = self.q_hid2lat(q_states)
-        q_mean, q_stddev = (
-          q_prob[..., :self.latent_dim],
-          F.softplus(q_prob[..., self.latent_dim:]))
+        q_prob = self.compute_posterior(y, y_mask, x_states, x_mask)
+        q_mean, q_stddev = q_prob[..., :latent_dim], F.softplus(q_prob[..., latent_dim:])
 
         likelihood_list = []
         for _ in range(20):
             z_q = q_mean + q_stddev * torch.randn_like(q_stddev)
-            hid_q = self.lat2hid(z_q)
-            decoder_states = self.decoder(hid_q, y_mask, x_states, x_mask)
-            logits = self.expander_nn(decoder_states)
-            import ipdb; ipdb.set_trace()
-            likelihood = - F.cross_entropy(logits[0], y[0], reduction="sum")
+            logits = self.get_logits(z_q, y_mask, x_states, x_mask)
+            likelihood = -1.0 * F.cross_entropy(
+                logits.view(-1, vocab_size),
+                y.view(-1), reduction="none", ignore_index=0)
+            likelihood = likelihood.view(*y_shape)
+            likelihood = likelihood.sum(1) / y_length # [batch_size]
             likelihood_list.append(likelihood)
 
         kl = self.compute_vae_KL(p_prob, q_prob)
-        kl = (kl * y_mask).sum() / y_mask.sum()
+        kl = (kl * y_mask).sum(1) / y_length
         mean_likelihood = sum(likelihood_list) / len(likelihood_list)
         elbo = mean_likelihood - kl
-        return elbo
+        return elbo # [batch_size]
 
     def delta_refine(self, z, y_mask, x_states, x_mask, n_iter=1):
         for idx in range(n_iter):
-            hid = self.lat2hid(z)
-            decoder_states = self.decoder(hid, y_mask, x_states, x_mask)
-            logits = self.expander_nn(decoder_states)
+            logits = self.get_logits(z, y_mask, x_states, x_mask)
             y_pred = logits.argmax(-1)
             y_pred = y_pred * y_mask.long()
             y_states = self.embed_layer(y_pred)

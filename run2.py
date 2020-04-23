@@ -99,6 +99,7 @@ ap.add_argument("--opt_ebmtype", default="transformer", type=str)
 ap.add_argument("--opt_modelclass", default="", type=str)
 ap.add_argument("--opt_corrupt", action="store_true")
 ap.add_argument("--opt_Tstep_size", default=0.8, type=float, help="step size for EBM SGD")
+ap.add_argument("--opt_Treport_elbo", action="store_true")
 ap.add_argument("--opt_decgrad", action="store_true", help="use decoder gradient as target of score matching")
 
 # Decoding options
@@ -449,6 +450,7 @@ if OPTS.batch_test:
     sorted_line_ids = np.argsort([len(l.split()) for l in lines])
     start_time = time.time()
     output_tokens = []
+    elbos = []
     i = 0
     while i < len(lines):
         # Make a batch
@@ -472,10 +474,17 @@ if OPTS.batch_test:
         if torch.cuda.is_available():
             x = x.cuda()
         targets = scorenet.translate(x, n_iter=1, step_size=OPTS.Tstep_size)
+        if OPTS.Treport_elbo:
+            with torch.no_grad():
+                elbo = nmt.compute_elbo(x, targets)
+                elbo = elbo.cpu().numpy().tolist()
+                elbos.extend(elbo)
         target_tokens = targets.cpu().numpy().tolist()
         output_tokens.extend(target_tokens)
         sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
         sys.stdout.flush()
+    if OPTS.Treport_elbo:
+        print("ELBO ({}): {:.4f} ".format(len(elbos), np.mean(elbos)))
 
     with open(OPTS.result_path, "w") as outf:
         # Record decoding time
