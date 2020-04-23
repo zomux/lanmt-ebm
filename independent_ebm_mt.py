@@ -40,13 +40,14 @@ ap.add_argument("--root", type=str, default=DATA_ROOT)
 ap.add_argument("--all", action="store_true")
 ap.add_argument("--test", action="store_true")
 ap.add_argument("--train", action="store_true")
+ap.add_argument("--resume", action="store_true")
 ap.add_argument("--evaluate", action="store_true")
 ap.add_argument("-tb", "--tensorboard", action="store_true")
-ap.add_argument("--opt_dtok", default="wmt14_fair_ende", type=str, help="dataset token")
+ap.add_argument("--opt_dtok", default="wmt14_fair", type=str, help="dataset token")
 ap.add_argument("--opt_seed", type=int, default=3, help="random seed")
 
 # Commmon option for both autoregressive and non-autoregressive models
-ap.add_argument("--opt_batchtokens", type=int, default=8192)
+ap.add_argument("--opt_batchtokens", type=int, default=4096)
 ap.add_argument("--opt_hiddensz", type=int, default=512)
 ap.add_argument("--opt_embedsz", type=int, default=512)
 ap.add_argument("--opt_heads", type=int, default=8)
@@ -168,6 +169,8 @@ if OPTS.train or OPTS.all:
         # clip_norm=0.1 if OPTS.scorenet else 0
     )
     trains_stop_stdout_monitor()
+    if OPTS.resume:
+        trainer.load(OPTS.model_path)
     trainer.run()
     trains_restore_stdout_monitor()
 
@@ -227,6 +230,7 @@ if OPTS.test or OPTS.all:
             # EBM refinement
             if not OPTS.Tbaseline:
                 target_mask = torch.ne(targets, 0).float()
+
                 logits = nmt.compute_logits(x, mask, targets, target_mask)
                 targets = logits.argmax(2)
                 target_tokens = targets.cpu().numpy()[0].tolist()

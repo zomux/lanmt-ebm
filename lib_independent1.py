@@ -26,7 +26,7 @@ from nmtlab.utils import OPTS
 
 from lib_envswitch import envswitch
 
-class LatentScoreNetwork6(Transformer):
+class IndependentEnergyNet1(Transformer):
 
     def __init__(
         self, lanmt_model, hidden_size=256, latent_size=8,

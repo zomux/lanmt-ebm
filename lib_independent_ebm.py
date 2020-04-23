@@ -42,7 +42,7 @@ class IndependentEnergyMT(Transformer):
         self._hidden_size = latent_size
         self.set_stepwise_training(False)
         super(IndependentEnergyMT, self).__init__(src_vocab_size=src_vocab_size, tgt_vocab_size=tgt_vocab_size)
-        self.enable_valid_grad = (OPTS.modeltype == "realgrad")
+        self.enable_valid_grad = (OPTS.modeltype == "realgrad" or OPTS.losstype == "scorematch")
 
     def prepare(self):
         if OPTS.enctype == "identity":
@@ -95,28 +95,36 @@ class IndependentEnergyMT(Transformer):
             grad = torch.autograd.grad(mean_energy, grad, create_graph=True)[0]
         return energy, grad
 
-    def compute_logits(self, x, x_mask, noise_y, y_mask):
+    def encode(self, x, x_mask, y, y_mask):
         # Pre-compute source states
         if OPTS.ebmtype.startswith("cross"):
             x_states = self.x_encoder(x, x_mask)
         else:
             x_states = None
         # Compute encoder
-        noise_y_embed = self.y_embed(noise_y)
+        noise_y_embed = self.y_embed(y)
         if OPTS.enctype.startswith("cross"):
             noise_z = self.encoder(noise_y_embed, y_mask, x_states, x_mask)
         else:
             noise_z = self.encoder(noise_y_embed, mask=y_mask)
-        # Compute energy model and refine the noise_z
-        if OPTS.modeltype == "fakegrad" or OPTS.modeltype == "realgrad":
-            refined_z = noise_z
-            for _ in range(OPTS.nrefine):
-                energy, energy_grad = self.compute_energy(refined_z, y_mask, x_states, x_mask)
-                refined_z = refined_z - energy_grad
-        elif OPTS.modeltype == "forward":
-            _, refined_z = self.compute_energy(noise_z, y_mask, x_states, x_mask)
+        return noise_z, x_states
+
+    def compute_logits(self, x, x_mask, noise_y, y_mask):
+        if len(noise_y.shape) == 3:
+            refined_z = noise_y
+            x_states = x
         else:
-            raise NotImplementedError
+            noise_z, x_states = self.encode(x, x_mask, noise_y, y_mask)
+            # Compute energy model and refine the noise_z
+            if OPTS.modeltype == "fakegrad" or OPTS.modeltype == "realgrad":
+                refined_z = noise_z
+                for _ in range(OPTS.nrefine):
+                    energy, energy_grad = self.compute_energy(refined_z, y_mask, x_states, x_mask)
+                    refined_z = refined_z - energy_grad
+            elif OPTS.modeltype == "forward":
+                _, refined_z = self.compute_energy(noise_z, y_mask, x_states, x_mask)
+            else:
+                raise NotImplementedError
         # Compute decoder and get logits
         if OPTS.dectype.startswith("cross"):
             decoder_states = self.decoder(refined_z, y_mask, x_states, x_mask)
@@ -125,7 +133,14 @@ class IndependentEnergyMT(Transformer):
         logits = self.expander(decoder_states)
         return logits
 
+    def xent_loss(self, logits, y, y_mask):
+        bsize, ylen = y.shape
+        loss_mat = F.cross_entropy(logits.view(bsize * ylen, -1), y.flatten(), reduction="none").view(bsize, ylen)
+        loss = (loss_mat * y_mask).sum() / y_mask.sum()
+        return loss
+
     def compute_loss(self, x, x_mask, y, y_mask):
+        score_map = {}
         bsize, ylen = y.shape
         # Corruption the target sequence to get input
         if OPTS.corruption == "target":
@@ -134,11 +149,33 @@ class IndependentEnergyMT(Transformer):
             noise_mask = noise_mask * y_mask
         else:
             raise NotImplementedError
-        logits = self.compute_logits(x, x_mask, noise_y, y_mask)
-        # compute cross entropy
-        loss_mat = F.cross_entropy(logits.reshape(bsize * ylen, -1), y.flatten(), reduction="none").reshape(bsize, ylen)
+        if OPTS.losstype != "scorematch":
+            logits = self.compute_logits(x, x_mask, noise_y, y_mask)
+            # compute cross entropy
+            loss_mat = F.cross_entropy(logits.view(bsize * ylen, -1), y.flatten(), reduction="none").view(bsize, ylen)
         if OPTS.losstype == "single":
             loss = (loss_mat * y_mask).sum() / y_mask.sum()
+        elif OPTS.losstype == "scorematch":
+            noise_z, x_states = self.encode(x, x_mask, noise_y, y_mask)
+            target_z, x_states = self.encode(x, x_mask, y, y_mask)
+            noise_z = noise_z + torch.randn_like(target_z)
+            target_z = target_z + torch.randn_like(target_z)
+            # logits = self.compute_logits(x_states, x_mask, noise_z, y_mask)
+            # noise_ae_loss = self.xent_loss(logits, noise_y, y_mask)
+            noise_ae_loss = 0.
+            y_logits = self.compute_logits(x_states, x_mask, target_z, y_mask)
+            y_ae_loss = self.xent_loss(y_logits, y, y_mask)
+            # Compute score matching loss
+            _, grad = self.compute_energy(noise_z, y_mask, x_states, x_mask)
+            scorematch_loss = (grad - (target_z - noise_z))**2
+            scorematch_loss = scorematch_loss.sum(2)
+            scorematch_loss = (scorematch_loss * y_mask).sum() / y_mask.sum()
+            loss = scorematch_loss + noise_ae_loss + y_ae_loss
+            score_map["zdiff"] = (((target_z - noise_z)**2).sum(2) * y_mask).sum() / y_mask.sum()
+            score_map["scorematch"] = scorematch_loss
+            # score_map["noise_ae"] = noise_ae_loss
+            score_map["y_ae"] = y_ae_loss
+
         elif OPTS.losstype == "balanced":
             loss1 = (loss_mat * y_mask * (1 - noise_mask)).sum() / (y_mask * (1 - noise_mask)).sum()
             loss2 = (loss_mat * noise_mask).sum() / noise_mask.sum()
@@ -146,11 +183,13 @@ class IndependentEnergyMT(Transformer):
         else:
             raise NotImplementedError
         # loss = loss2
-        yhat = logits.argmax(2)
-        acc = ((yhat == y).float() * y_mask).sum() / y_mask.sum()
-        noise_acc = ((yhat == y).float() * noise_mask).sum() / noise_mask.sum()
+        # yhat = logits.argmax(2)
+        # acc = ((yhat == y).float() * y_mask).sum() / y_mask.sum()
+        # noise_acc = ((yhat == y).float() * noise_mask).sum() / noise_mask.sum()
+        acc = noise_acc = loss * 0.
 
-        return {"loss": loss, "acc": acc, "noise_acc": noise_acc}
+        score_map.update({"loss": loss, "acc": acc, "noise_acc": noise_acc})
+        return score_map
 
     def forward(self, x, y, sampling=False):
         y_mask = self.to_float(torch.ne(y, 0))
@@ -177,7 +216,7 @@ class IndependentEnergyMT(Transformer):
             # z[:, max_pos] = grad[:, max_pos]
             # z = grad
             # noise = torch.randn_like(z) * np.sqrt(step_size * 2)
-            z = z - step_size * grad
+            z = z + step_size * grad
             # norm = grad.norm(dim=2)
             # max_pos = norm.argmax(1)
             # if norm.max() < 0.5:
