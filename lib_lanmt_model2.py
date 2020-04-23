@@ -276,22 +276,21 @@ class LANMTModel2(Transformer):
             import pdb;pdb.set_trace()
         return score_map
 
-    def measure_ELBO(self, x, y, x_mask=None, x_states=None, p_prob=None):
+    def measure_ELBO(self, x, y):
         """Measure the ELBO in the inference time."""
+        x_mask = self.to_float(torch.ne(x, 0))
         y_mask = self.to_float(torch.ne(y, 0))
-        batch_size = list(y.shape)[0]
+        batch_size = list(x.shape)[0]
         y_shape = list(y.shape)
 
         # Source sentence hidden states, shared between prior, posterior, decoder.
-        if p_prob is None or x_states is None or x_mask is None:
-            x_mask = self.to_float(torch.ne(x, 0))
-            x_states = self.embed_layer(x)
-            x_states = self.x_encoder(x_states, x_mask)
+        x_states = self.embed_layer(x)
+        x_states = self.x_encoder(x_states, x_mask)
 
-            # Compute p(z|x)
-            pos_states = self.pos_embed_layer(y).expand(y_shape + [self.hidden_size])
-            p_states = self.prior_encoder(pos_states, y_mask, x_states, x_mask)
-            p_prob = self.p_hid2lat(p_states)
+        # Compute p(z|x)
+        pos_states = self.pos_embed_layer(y).expand(y_shape + [self.hidden_size])
+        p_states = self.prior_encoder(pos_states, y_mask, x_states, x_mask)
+        p_prob = self.p_hid2lat(p_states)
 
         # Compute q(z|x,y)
         y_states = self.embed_layer(y)
@@ -307,12 +306,8 @@ class LANMTModel2(Transformer):
             hid_q = self.lat2hid(z_q)
             decoder_states = self.decoder(hid_q, y_mask, x_states, x_mask)
             logits = self.expander_nn(decoder_states)
-            shape = logits.shape
-            likelihood = - F.cross_entropy(
-                logits.view(-1, shape[-1]),
-                y.view(-1),
-                reduction="sum", ignore_index=0)
-            likelihood = likelihood / y_mask.sum()
+            import ipdb; ipdb.set_trace()
+            likelihood = - F.cross_entropy(logits[0], y[0], reduction="sum")
             likelihood_list.append(likelihood)
 
         kl = self.compute_vae_KL(p_prob, q_prob)
@@ -320,6 +315,25 @@ class LANMTModel2(Transformer):
         mean_likelihood = sum(likelihood_list) / len(likelihood_list)
         elbo = mean_likelihood - kl
         return elbo
+
+    def delta_refine(self, z, y_mask, x_states, x_mask, n_iter=1):
+        for idx in range(n_iter):
+            hid = self.lat2hid(z)
+            decoder_states = self.decoder(hid, y_mask, x_states, x_mask)
+            logits = self.expander_nn(decoder_states)
+            y_pred = logits.argmax(-1)
+            y_pred = y_pred * y_mask.long()
+            y_states = self.embed_layer(y_pred)
+            q_states = self.q_encoder_xy(y_states, y_mask, x_states, x_mask)
+            q_prob = self.q_hid2lat(q_states)
+            z = q_prob[..., :self.latent_dim]
+        return z
+
+    def get_logits(self, z, y_mask, x_states, x_mask):
+        hid = self.lat2hid(z)
+        decoder_states = self.decoder(hid, y_mask, x_states, x_mask)
+        logits = self.expander_nn(decoder_states)
+        return logits
 
     def translate(self, x, refine_steps=0):
         """ Testing codes.
@@ -335,7 +349,7 @@ class LANMTModel2(Transformer):
         # y_lens = x_lens
         y_max_len = torch.max(y_lens.long()).item()
         batch_size = list(x_states.shape)[0]
-        y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len)
+        y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len).cuda()
         y_mask = (y_mask < y_lens[:, None])
         # y_mask = x_mask
 
@@ -347,16 +361,7 @@ class LANMTModel2(Transformer):
         z = p_prob[..., :self.latent_dim]
 
         # Perform refinement
-        for refine_idx in range(refine_steps):
-            hid = self.lat2hid(z)
-            decoder_states = self.decoder(hid, y_mask, x_states, x_mask)
-            logits = self.expander_nn(decoder_states)
-            y_pred = logits.argmax(-1)
-            y_pred = y_pred * y_mask.long()
-            y_states = self.embed_layer(y_pred)
-            q_states = self.q_encoder_xy(y_states, y_mask, x_states, x_mask)
-            q_prob = self.q_hid2lat(q_states)
-            z = q_prob[..., :self.latent_dim]
+        z = self.delta_refine(z, y_mask, x_states, x_mask, n_iter=refine_steps)
 
         hid = self.lat2hid(z)
         decoder_states = self.decoder(hid, y_mask, x_states, x_mask)

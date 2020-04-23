@@ -90,19 +90,15 @@ ap.add_argument("--opt_decoderl", type=int, default=6, help="number of decoder l
 ap.add_argument("--opt_latentdim", default=8, type=int, help="dimension of latent variables")
 
 # Options for EBM
-ap.add_argument("--opt_decoder", default="fixed", type=str)
 ap.add_argument("--opt_noise", default="none", type=str)
-ap.add_argument("--opt_targets", default="xent", type=str)
-ap.add_argument("--opt_imitation", action="store_true")
-ap.add_argument("--opt_imit_rand_steps", default=1, type=int)
-ap.add_argument("--opt_line_search_c", type=float, default=0.1)
+ap.add_argument("--opt_train_sgd_steps", default=0, type=int)
+ap.add_argument("--opt_train_delta_steps", default=2, type=int)
 ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
-ap.add_argument("--opt_modeltype", default="realgrad", type=str)
+ap.add_argument("--opt_modeltype", default="whichgrad", type=str)
 ap.add_argument("--opt_ebmtype", default="transformer", type=str)
-ap.add_argument("--opt_cosine", default="T", type=str)
 ap.add_argument("--opt_modelclass", default="", type=str)
 ap.add_argument("--opt_corrupt", action="store_true")
-ap.add_argument("--opt_refine_from_mean", action="store_true")
+ap.add_argument("--opt_Tstep_size", default=0.8, type=float, help="step size for EBM SGD")
 
 # Decoding options
 ap.add_argument("--opt_Twithout_ebm", action="store_true", help="without using EBM")
@@ -190,9 +186,9 @@ if is_root_node():
         except:
             pass
         if envswitch.who() != "shu":
-            tb_str = "{}_{}_{}".format(OPTS.noise, OPTS.cosine, OPTS.modeltype)
-            if OPTS.imitation:
-                tb_str += "_imit{}".format(OPTS.imit_rand_steps)
+            tb_str = "{}_{}".format(OPTS.noise, OPTS.modeltype)
+            if OPTS.train_sgd_steps > 0:
+                tb_str += "_imit{}".format(OPTS.train_sgd_steps)
             tb_logdir = envswitch.load("home_dir") + "/tensorboard/{}".format(tb_str)
             for logdir in [tb_logdir+"_train", tb_logdir+"_dev"]:
                 if not os.path.exists(logdir):
@@ -292,18 +288,13 @@ if OPTS.scorenet:
         from lib_score_matching6_shu import LatentScoreNetwork6
         ScoreNet = LatentScoreNetwork6
 
-
     nmt = ScoreNet(
         nmt,
         hidden_size=OPTS.hiddensz,
         latent_size=OPTS.latentdim,
         noise=OPTS.noise,
-        targets=OPTS.targets,
-        decoder=OPTS.decoder,
-        imitation=OPTS.imitation,
-        imit_rand_steps=OPTS.imit_rand_steps,
-        cosine=OPTS.cosine,
-        refine_from_mean=OPTS.refine_from_mean,
+        train_sgd_steps=OPTS.train_sgd_steps,
+        train_delta_steps=OPTS.train_delta_steps,
         modeltype=OPTS.modeltype
     )
 
@@ -364,10 +355,12 @@ if OPTS.test or OPTS.all:
         assert os.path.exists(pretrained_autoregressive_path)
         load_rescoring_transformer(basic_options, pretrained_autoregressive_path)
     model_path = OPTS.model_path
+    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_modeltype-fakegrad_noise-rand_scorenet_tied.pt"
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
     nmt.load(model_path)
+    print ("Successfully loaded EBM: {}".format(model_path))
     if torch.cuda.is_available():
         nmt.cuda()
     nmt.train(False)
@@ -402,7 +395,7 @@ if OPTS.test or OPTS.all:
             start_time = time.time()
             # with torch.no_grad() if not OPTS.scorenet else nullcontext():
                 # Predict latent and target words from prior
-            targets = scorenet.translate(x, n_iter=4)
+            targets = scorenet.translate(x, n_iter=1, step_size=OPTS.Tstep_size)
             target_tokens = targets.cpu().numpy()[0].tolist()
             if targets is None:
                 target_tokens = [2, 2, 2]
@@ -430,9 +423,8 @@ if OPTS.batch_test:
         print("--opt_Tlatent_search is not supported in batch test mode right now. Try to implement it.")
     # Load trained model
     model_path = OPTS.model_path
-    #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_modeltype-fakegrad_noise-rand_scorenet_tied.pt"
-    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_noise-rand_scorenet_tied.pt"
-    #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints_all/checkpoints_0417/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_noise-rand_scorenet_tied.pt"
+    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_modeltype-fakegrad_noise-rand_scorenet_tied.pt"
+    #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_noise-rand_scorenet_tied.pt"
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
@@ -478,7 +470,7 @@ if OPTS.batch_test:
         x = torch.tensor(x)
         if torch.cuda.is_available():
             x = x.cuda()
-        targets = scorenet.translate(x, n_iter=1) # NOTE
+        targets = scorenet.translate(x, n_iter=1, step_size=OPTS.Tstep_size)
         target_tokens = targets.cpu().numpy().tolist()
         output_tokens.extend(target_tokens)
         sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
