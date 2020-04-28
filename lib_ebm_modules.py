@@ -30,7 +30,7 @@ class EnergyFn(nn.Module):
         h = self.lat2hid(z)
         energy = self.transformer(h, y_mask, x_states, x_mask)
         energy = energy * y_mask[:, :, None]
-        energy = energy.sum(1) / y_mask.sum(1).float()
+        energy = energy.sum(1) / y_mask.sum(1).float()[:, None]
         energy = self.hid2energy(energy)
         if self.positive:
             energy = F.softplus(energy)

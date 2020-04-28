@@ -72,7 +72,7 @@ def get_dataset_paths(data_root, dataset_tok):
         tgt_vocab_path = "{}/spm/iwslt16_deen_distilled.vocab".format(data_root)
 
         n_valid_per_epoch = 8
-        training_warmsteps = 4000
+        training_warmsteps = 8000
         training_maxsteps = 1000000
         pretrained_autoregressive_path = "{}/wmt14_ende_teacher.pt".format(data_root)
 

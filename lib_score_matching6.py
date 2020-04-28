@@ -28,8 +28,9 @@ class LatentScoreNetwork6(Transformer):
 
     def __init__(
         self, lanmt_model, hidden_size=256, latent_size=8,
-        noise="none", train_sgd_steps=0, train_delta_steps=2, modeltype="realgrad",
-        enable_valid_grad=True):
+        noise=1.0, train_sgd_steps=0, train_step_size=0.0, train_delta_steps=2,
+        modeltype="realgrad", train_interpolate_ratio=0.0,
+        ebm_useconv=False, enable_valid_grad=True):
         """
         Args:
             lanmt_model(LANMTModel)
@@ -41,8 +42,11 @@ class LatentScoreNetwork6(Transformer):
         self._mycnt = 0
         self.noise = noise
         self.train_sgd_steps = train_sgd_steps
+        self.train_step_size = train_step_size
         self.train_delta_steps = train_delta_steps
         self.modeltype = modeltype
+        self.train_interpolate_ratio = train_interpolate_ratio
+        self.ebm_useconv = ebm_useconv
         assert self.modeltype in ["realgrad", "fakegrad"]
 
         super(LatentScoreNetwork6, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
@@ -53,9 +57,10 @@ class LatentScoreNetwork6(Transformer):
 
     def prepare(self):
         D_lat, D_hid = self._latent_size, self._hidden_size
-        self.magnitude_fn = ConvNetEnergyFn(D_lat, D_hid, positive=True) # Learn z_diff.norm(1, 2)
+        energy_cls = ConvNetEnergyFn if self.ebm_useconv else EnergyFn
+        self.magnitude_fn = energy_cls(D_lat, D_hid, positive=True) # Learn z_diff.norm(1, 2)
         if self.modeltype == "realgrad": # Learn the energy function
-            self.score_fn = ConvNetEnergyFn(D_lat, D_hid, positive=False)
+            self.score_fn = energy_cls(D_lat, D_hid, positive=False)
         elif self.modeltype == "fakegrad": # Directly learn the gradient of the energy
             self.score_fn = ScoreFn(D_lat, D_hid, D_lat, positive=False)
 
@@ -119,12 +124,18 @@ class LatentScoreNetwork6(Transformer):
         z_ini = p_mean
         if self.training:
             stddev = p_stddev * torch.randn_like(p_stddev)
-            if self.noise == "rand":
-                stddev = stddev * np.random.random_sample()
+            stddev = stddev * np.random.random_sample() * self.noise
             z_ini += stddev
-            if self.train_sgd_steps > 0:
-                z_ini = self.energy_sgd(
-                    z_ini, y_mask, x_states, x_mask, n_iter=train_sgd_steps, step_size=step_size)
+            if self.train_sgd_steps > 0 and self._mycnt > 50000 and np.random.random_sample() < 0.5:
+                with torch.no_grad():
+                    z_ini = self.energy_sgd(
+                        z_ini, y_mask, x_states, x_mask,
+                        n_iter=self.train_sgd_steps, step_size=self.train_step_size)
+            if self.train_interpolate_ratio > 0.0 and self._mycnt > 50000 and np.random.random_sample() < 0.5:
+                with torch.no_grad():
+                    z_fin = lanmt.delta_refine(
+                        z_ini, y_mask, x_states, x_mask, n_iter=self.train_delta_steps)
+                    z_ini = z_ini + (z_fin - z_ini) * self.train_interpolate_ratio
         with torch.no_grad():
             z_fin = lanmt.delta_refine(
                 z_ini, y_mask, x_states, x_mask, n_iter=self.train_delta_steps)

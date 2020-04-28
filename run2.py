@@ -90,14 +90,19 @@ ap.add_argument("--opt_decoderl", type=int, default=6, help="number of decoder l
 ap.add_argument("--opt_latentdim", default=8, type=int, help="dimension of latent variables")
 
 # Options for EBM
-ap.add_argument("--opt_noise", default="none", type=str)
+ap.add_argument("--opt_ebm_lr", default=0.001, type=float)
+ap.add_argument("--opt_ebm_useconv", action="store_true")
+ap.add_argument("--opt_noise", default=1.0, type=float)
 ap.add_argument("--opt_train_sgd_steps", default=0, type=int)
-ap.add_argument("--opt_train_delta_steps", default=2, type=int)
+ap.add_argument("--opt_train_step_size", default=0.8, type=float)
+ap.add_argument("--opt_train_delta_steps", default=1, type=int)
+ap.add_argument("--opt_train_interpolate_ratio", default=0.0, type=float)
 ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
 ap.add_argument("--opt_modeltype", default="whichgrad", type=str)
 ap.add_argument("--opt_ebmtype", default="transformer", type=str)
 ap.add_argument("--opt_modelclass", default="", type=str)
 ap.add_argument("--opt_corrupt", action="store_true")
+ap.add_argument("--opt_Tsgd_steps", default=1, type=int)
 ap.add_argument("--opt_Tstep_size", default=0.8, type=float, help="step size for EBM SGD")
 ap.add_argument("--opt_Treport_elbo", action="store_true")
 ap.add_argument("--opt_decgrad", action="store_true", help="use decoder gradient as target of score matching")
@@ -188,9 +193,13 @@ if is_root_node():
         except:
             pass
         if envswitch.who() != "shu":
-            tb_str = "{}_{}".format(OPTS.noise, OPTS.modeltype)
+            tb_str = "{}_noise{}_lr{}".format(OPTS.modeltype, OPTS.noise, OPTS.ebm_lr)
             if OPTS.train_sgd_steps > 0:
                 tb_str += "_imit{}".format(OPTS.train_sgd_steps)
+            if OPTS.train_interpolate_ratio > 0:
+                tb_str += "_interpolate{}".format(OPTS.train_interpolate_ratio)
+            if OPTS.ebm_useconv:
+                tb_str = "conv_" + tb_str
             tb_logdir = envswitch.load("home_dir") + "/tensorboard/{}".format(tb_str)
             for logdir in [tb_logdir+"_train", tb_logdir+"_dev"]:
                 if not os.path.exists(logdir):
@@ -296,8 +305,11 @@ if OPTS.scorenet:
         latent_size=OPTS.latentdim,
         noise=OPTS.noise,
         train_sgd_steps=OPTS.train_sgd_steps,
+        train_step_size=OPTS.train_step_size,
         train_delta_steps=OPTS.train_delta_steps,
-        modeltype=OPTS.modeltype
+        modeltype=OPTS.modeltype,
+        train_interpolate_ratio=OPTS.train_interpolate_ratio,
+        ebm_useconv=OPTS.ebm_useconv
     )
 
 # Training
@@ -315,7 +327,7 @@ if OPTS.train or OPTS.all:
     if OPTS.scorenet and False:
         optimizer = optim.SGD(nmt.parameters(), lr=0.001)
     else:
-        optimizer = optim.Adam(nmt.parameters(), lr=0.0003, betas=(0.9, 0.98), eps=1e-4)
+        optimizer = optim.Adam(nmt.parameters(), lr=OPTS.ebm_lr, betas=(0.9, 0.98), eps=1e-9)
     trainer = MTTrainer(
         nmt, dataset, optimizer,
         scheduler=scheduler, multigpu=gpu_num > 1,
@@ -425,8 +437,8 @@ if OPTS.batch_test:
         print("--opt_Tlatent_search is not supported in batch test mode right now. Try to implement it.")
     # Load trained model
     model_path = OPTS.model_path
-    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_modeltype-fakegrad_noise-rand_scorenet_tied.pt"
-    #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_noise-rand_scorenet_tied.pt"
+    #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints_all/checkpoints_0423/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_modeltype-fakegrad_noise-rand_scorenet_tied.pt"
+    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_ebm_lr-0.0003_modeltype-fakegrad_scorenet_tied_train_sgd_steps-1_train_step_size-0.5.pt"
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
@@ -473,7 +485,9 @@ if OPTS.batch_test:
         x = torch.tensor(x)
         if torch.cuda.is_available():
             x = x.cuda()
-        targets = scorenet.translate(x, n_iter=1, step_size=OPTS.Tstep_size)
+        with torch.no_grad():
+            targets = scorenet.translate(x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size)
+            #targets = nmt.translate(x, refine_steps=4)
         if envswitch.who() != "shu" and OPTS.Treport_elbo:
             with torch.no_grad():
                 elbo, logpy, logpz, logqz = nmt.compute_elbo(x, targets)
@@ -493,8 +507,9 @@ if OPTS.batch_test:
         elbo_file_path = os.path.join(HOME_DIR, "elbo_file")
         elbo_file = open(elbo_file_path, "a")
         elbo_file.write(
-            "{},{:.4f},{:.4f},{:.4f},{:.4f}\r\n".format(
-            OPTS.Tstep_size, np.mean(logpys), np.mean(logpzs), np.mean(logqzs), np.mean(elbos)))
+            "{},{},{:.4f},{:.4f},{:.4f},{:.4f}\r\n".format(
+                OPTS.Tsgd_steps, OPTS.Tstep_size,
+                np.mean(logpys), np.mean(logpzs), np.mean(logqzs), np.mean(elbos)))
         elbo_file.close()
 
     with open(OPTS.result_path, "w") as outf:
@@ -516,7 +531,7 @@ if OPTS.batch_test:
 if OPTS.evaluate or OPTS.all:
     # Post-processing
     if is_root_node():
-        hyp_path = "/tmp/{}_{}_{}.txt".format(OPTS.noise, OPTS.targets, OPTS.cosine)
+        hyp_path = "/tmp/{}_noise{}_lr{}.txt".format(OPTS.modeltype, OPTS.noise, OPTS.ebm_lr)
         result_path = OPTS.result_path
         with open(hyp_path, "w") as outf:
             for line in open(result_path):
@@ -557,6 +572,6 @@ if OPTS.evaluate or OPTS.all:
             bleu_file_path = os.path.join(HOME_DIR, "bleu_file")
             bleu_file = open(bleu_file_path, "a")
             bleu_file.write(
-                "{},{:.4f}\r\n".format(
-                OPTS.Tstep_size, bleu))
+                "{},{},{:.4f}\r\n".format(
+                    OPTS.Tsgd_steps, OPTS.Tstep_size, bleu))
             bleu_file.close()
