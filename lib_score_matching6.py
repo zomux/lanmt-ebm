@@ -135,7 +135,7 @@ class LatentScoreNetwork6(Transformer):
                 with torch.no_grad():
                     z_fin = lanmt.delta_refine(
                         z_ini, y_mask, x_states, x_mask, n_iter=self.train_delta_steps)
-                    z_ini = z_ini + (z_fin - z_ini) * self.train_interpolate_ratio
+                    z_ini = z_ini + (z_fin - z_ini) * np.random.random_sample() * self.train_interpolate_ratio
         with torch.no_grad():
             z_fin = lanmt.delta_refine(
                 z_ini, y_mask, x_states, x_mask, n_iter=self.train_delta_steps)

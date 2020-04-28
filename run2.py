@@ -55,7 +55,7 @@ envswitch.register(
     "jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
 )
 envswitch.register(
-    "jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoint_lanmt/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
+    "jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints_lanmt/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
 )
 
 ap = ArgumentParser()
@@ -156,8 +156,8 @@ if envswitch.who() == "shu":
     OPTS.fixbug2 = True
 
 if envswitch.who() == "jason_prince":
-    OPTS.model_path = os.path.join(HOME_DIR, "checkpoints/lanmt.pt")
-    OPTS.result_path = os.path.join(HOME_DIR, "checkpoints/lanmt.result")
+    OPTS.model_path = os.path.join(HOME_DIR+"/checkpoints", os.path.basename(OPTS.model_path))
+    OPTS.result_path = os.path.join(HOME_DIR+"/checkpoints", os.path.basename(OPTS.result_path))
 
 # Determine the number of GPUs to use
 horovod_installed = importlib.util.find_spec("horovod") is not None
