@@ -30,7 +30,8 @@ class LatentScoreNetwork6(Transformer):
         self, lanmt_model, hidden_size=256, latent_size=8,
         noise=1.0, train_sgd_steps=0, train_step_size=0.0, train_delta_steps=2,
         modeltype="realgrad", train_interpolate_ratio=0.0,
-        ebm_useconv=False, enable_valid_grad=True):
+        ebm_useconv=False, direction_n_layers=4, magnitude_n_layers=4,
+        enable_valid_grad=True):
         """
         Args:
             lanmt_model(LANMTModel)
@@ -47,6 +48,8 @@ class LatentScoreNetwork6(Transformer):
         self.modeltype = modeltype
         self.train_interpolate_ratio = train_interpolate_ratio
         self.ebm_useconv = ebm_useconv
+        self.direction_n_layers = direction_n_layers
+        self.magnitude_n_layers = magnitude_n_layers
         assert self.modeltype in ["realgrad", "fakegrad"]
 
         super(LatentScoreNetwork6, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
@@ -58,11 +61,14 @@ class LatentScoreNetwork6(Transformer):
     def prepare(self):
         D_lat, D_hid = self._latent_size, self._hidden_size
         energy_cls = ConvNetEnergyFn if self.ebm_useconv else EnergyFn
-        self.magnitude_fn = energy_cls(D_lat, D_hid, positive=True) # Learn z_diff.norm(1, 2)
+        self.magnitude_fn = energy_cls(
+            D_lat, D_hid, n_layers=self.magnitude_n_layers, positive=True) # Learn z_diff.norm(1, 2)
         if self.modeltype == "realgrad": # Learn the energy function
-            self.score_fn = energy_cls(D_lat, D_hid, positive=False)
+            self.score_fn = energy_cls(
+                D_lat, D_hid, n_layers=self.direction_n_layers, positive=False)
         elif self.modeltype == "fakegrad": # Directly learn the gradient of the energy
-            self.score_fn = ScoreFn(D_lat, D_hid, D_lat, positive=False)
+            self.score_fn = ScoreFn(
+                D_lat, D_hid, D_lat, n_layers=self.direction_n_layers, positive=False)
 
     def energy_sgd(self, z, y_mask, x_states, x_mask, n_iter, step_size):
         # z : [bsz, y_length, lat_size]

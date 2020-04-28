@@ -92,6 +92,8 @@ ap.add_argument("--opt_latentdim", default=8, type=int, help="dimension of laten
 # Options for EBM
 ap.add_argument("--opt_ebm_lr", default=0.001, type=float)
 ap.add_argument("--opt_ebm_useconv", action="store_true")
+ap.add_argument("--opt_direction_n_layers", default=4, type=int)
+ap.add_argument("--opt_magnitude_n_layers", default=4, type=int)
 ap.add_argument("--opt_noise", default=1.0, type=float)
 ap.add_argument("--opt_train_sgd_steps", default=0, type=int)
 ap.add_argument("--opt_train_step_size", default=0.8, type=float)
@@ -194,6 +196,8 @@ if is_root_node():
             pass
         if envswitch.who() != "shu":
             tb_str = "{}_noise{}_lr{}".format(OPTS.modeltype, OPTS.noise, OPTS.ebm_lr)
+            if OPTS.direction_n_layers < 4 or OPTS.magnitude_n_layers < 4:
+                tb_str += "_mag{}_dir{}".format(OPTS.magnitude_n_layers, OPTS.direction_n_layers)
             if OPTS.train_sgd_steps > 0:
                 tb_str += "_imit{}".format(OPTS.train_sgd_steps)
             if OPTS.train_interpolate_ratio > 0:
@@ -309,7 +313,9 @@ if OPTS.scorenet:
         train_delta_steps=OPTS.train_delta_steps,
         modeltype=OPTS.modeltype,
         train_interpolate_ratio=OPTS.train_interpolate_ratio,
-        ebm_useconv=OPTS.ebm_useconv
+        ebm_useconv=OPTS.ebm_useconv,
+        direction_n_layers=OPTS.direction_n_layers,
+        magnitude_n_layers=OPTS.magnitude_n_layers,
     )
 
 # Training
