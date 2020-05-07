@@ -134,7 +134,7 @@ class LANMTModel2(Transformer):
     def compute_length_predictor_loss(self, x_states, x_mask, y_mask):
         """Get the loss for length predictor.
         """
-        y_lens = y_mask.sum(1)  # TODO(jason) Why -1?? ask raphael
+        y_lens = y_mask.sum(1)
         x_lens = x_mask.sum(1)
         delta = (y_lens - x_lens + 50.).long().clamp(0, 99)
         mean_z = (x_states * x_mask[:, :, None]).sum(1) / x_mask.sum(1)[:, None]
@@ -149,7 +149,7 @@ class LANMTModel2(Transformer):
 
     def compute_vae_KL(self, p_prob, q_prob):
         # inputs : [batch_size, targets_length, latent_size]
-        # outputs : [batch_size, targets_length]
+        # outputs : [batch_size, targets_length, latent_size]
         q_mean, q_stddev = q_prob[..., :self.latent_dim], F.softplus(q_prob[..., self.latent_dim:])
         p_mean, p_stddev = p_prob[..., :self.latent_dim], F.softplus(p_prob[..., self.latent_dim:])
 
@@ -157,7 +157,6 @@ class LANMTModel2(Transformer):
         kl += torch.log(p_stddev + 1e-8) - torch.log(q_stddev + 1e-8)
         kl += (q_stddev ** 2 + (q_mean - p_mean)**2) / (2 * p_stddev**2)
         kl -= 0.5
-        kl = kl.sum(-1)
         return kl
 
     def predict_length(self, p_states, x_mask):
@@ -171,7 +170,7 @@ class LANMTModel2(Transformer):
     def compute_final_loss(self, q_prob, p_prob, y_mask, score_map):
         """ Compute the report the loss.
         """
-        kl = self.compute_vae_KL(p_prob, q_prob)
+        kl = self.compute_vae_KL(p_prob, q_prob) # [batch_size, targets_length, latent_size]
         # Apply budgets for KL divergence: KL = max(KL, budget)
         budget_upperbound = self.KL_budget
         if self.budget_annealing:
@@ -191,12 +190,10 @@ class LANMTModel2(Transformer):
         score_map["KL_budget"] = torch.tensor(budget)
         # Compute KL divergence
         max_mask = self.to_float((kl - budget) > 0.)
-        kl = kl * max_mask + (1. - max_mask) * budget
-        kl_loss = (kl * y_mask / y_mask.shape[0]).sum()
+        kl = kl * max_mask + (1. - max_mask) * budget # [batch_size, targets_length, latent_size]
+        kl = (kl * y_mask[:, :, None]).sum() / y_mask.sum() # [1]
         # Report KL divergence
-        score_map["kl"] = kl_loss
-        # Also report the averge KL for each token
-        score_map["tok_kl"] = (kl * y_mask / y_mask.sum()).sum()
+        score_map["kl"] = kl
         # Report cross-entropy loss
         score_map["nll"] = score_map["loss"]
         # Cross-entropy loss is *already* backproped when computing softmaxes in shards
@@ -276,7 +273,8 @@ class LANMTModel2(Transformer):
 
         # --------------------------  Compute losses ------------------------#
         decoder_outputs = TensorMap({"final_states": decoder_states})
-        denom = x.shape[0]
+        #denom = x.shape[0]
+        denom = None
         if self._shard_size is not None and self._shard_size > 0:
             loss_scores, decoder_tensors, decoder_grads = self.compute_shard_loss(
                 decoder_outputs, y, y_mask, denominator=denom, ignore_first_token=False, backward=False
@@ -299,7 +297,7 @@ class LANMTModel2(Transformer):
             decoder_grads.append(None)
             torch.autograd.backward(decoder_tensors, decoder_grads)
         if torch.isnan(score_map["loss"]) or torch.isinf(score_map["loss"]):
-            import pdb;pdb.set_trace()
+            import ipdb; ipdb.set_trace()
         return score_map
 
     def compute_log_joint(self, x, z, y, y_mask):
