@@ -13,10 +13,11 @@ from torch import autograd
 import numpy as np
 import math
 import os
+from contextlib import suppress
 import sys
 sys.path.append(".")
 
-from lib_ebm_modules import ConvNetEnergyFn, EnergyFn, ScoreFn, cosine_loss_tc
+from lib_ebm_modules import ConvNetEnergyFn, EnergyFn, ScoreFn, cosine_loss_tc, score_matching_loss
 from lib_lanmt_model2 import LANMTModel2
 from lib_corrpution import random_token_corruption
 from nmtlab.models import Transformer
@@ -133,7 +134,7 @@ class LatentScoreNetwork6(Transformer):
             stddev = stddev * np.random.random_sample() * self.noise
             z_ini += stddev
             if self.train_sgd_steps > 0 and self._mycnt > 50000 and np.random.random_sample() < 0.5:
-                with torch.no_grad():
+                with torch.no_grad() if self.modeltype == "fakegrad" else suppress():
                     z_ini = self.energy_sgd(
                         z_ini, y_mask, x_states, x_mask,
                         n_iter=self.train_sgd_steps, step_size=self.train_step_size)
@@ -165,7 +166,7 @@ class LatentScoreNetwork6(Transformer):
         # [batch_size, targets_length, latent_size]
         score = self.score_fn.score(z_ini, y_mask, x_states, x_mask)
         # [batch_size]
-        loss_direction = cosine_loss_tc(score, z_diff, y_mask)
+        loss_direction = score_matching_loss(score, z_diff, y_mask)
 
         magnitude = self.magnitude_fn(z_ini, y_mask, x_states, x_mask) # [bsz]
         z_diff_norm = (z_diff ** 2) * y_mask[:, :, None]
@@ -177,7 +178,7 @@ class LatentScoreNetwork6(Transformer):
         score_map = {"loss": loss}
 
         if not self.training or self._mycnt % 50 == 0:
-            score_map["cosine_sim"] = 1 - loss_direction.mean()
+            score_map["cosine_sim"] = 1 - cosine_loss_tc(score, z_diff, y_mask).mean()
             score_map["loss_magnitude"] = loss_magnitude.mean()
             score_map["loss_direction"] = loss_direction.mean()
             score_map["z_diff_norm"] = z_diff_norm.mean()
@@ -218,7 +219,8 @@ class LatentScoreNetwork6(Transformer):
         if OPTS.Twithout_ebm:
             z_ = z
         else:
-            z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, step_size=step_size)
+            with torch.no_grad() if self.modeltype == "fakegrad" else suppress():
+                z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, step_size=step_size)
 
         with torch.no_grad():
             logits = lanmt.get_logits(z_, y_mask, x_states, x_mask)

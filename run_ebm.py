@@ -25,7 +25,7 @@ from nmtlab.evaluation import MosesBLEUEvaluator, SacreBLEUEvaluator
 from collections import defaultdict
 import numpy as np
 from argparse import ArgumentParser
-#from contextlib import nullcontext
+from contextlib import suppress
 
 from lib_lanmt_model2 import LANMTModel2
 from lib_rescoring import load_rescoring_transformer
@@ -96,7 +96,7 @@ ap.add_argument("--opt_direction_n_layers", default=4, type=int)
 ap.add_argument("--opt_magnitude_n_layers", default=4, type=int)
 ap.add_argument("--opt_noise", default=1.0, type=float)
 ap.add_argument("--opt_train_sgd_steps", default=0, type=int)
-ap.add_argument("--opt_train_step_size", default=0.8, type=float)
+ap.add_argument("--opt_train_step_size", default=0.0, type=float)
 ap.add_argument("--opt_train_delta_steps", default=1, type=int)
 ap.add_argument("--opt_train_interpolate_ratio", default=0.0, type=float)
 ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
@@ -491,9 +491,8 @@ if OPTS.batch_test:
         x = torch.tensor(x)
         if torch.cuda.is_available():
             x = x.cuda()
-        with torch.no_grad():
+        with torch.no_grad() if OPTS.modeltype == "fakegrad" else suppress():
             targets = scorenet.translate(x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size)
-            #targets = nmt.translate(x, refine_steps=4)
         if envswitch.who() != "shu" and OPTS.Treport_elbo:
             with torch.no_grad():
                 elbo, logpy, logpz, logqz = nmt.compute_elbo(x, targets)
