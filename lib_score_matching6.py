@@ -224,7 +224,7 @@ class LatentScoreNetwork6(Transformer):
             logits = lanmt.get_logits(z_, y_mask, x_states, x_mask)
         y_pred = logits.argmax(-1)
         y_pred = y_pred * y_mask.long()
-        return y_pred
+        return y_pred, z_, y_mask
 
     def nmt(self):
         return self._lanmt[0]

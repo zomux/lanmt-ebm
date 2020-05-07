@@ -106,6 +106,7 @@ ap.add_argument("--opt_modelclass", default="", type=str)
 ap.add_argument("--opt_corrupt", action="store_true")
 ap.add_argument("--opt_Tsgd_steps", default=1, type=int)
 ap.add_argument("--opt_Tstep_size", default=0.8, type=float, help="step size for EBM SGD")
+ap.add_argument("--opt_Treport_log_joint", action="store_true")
 ap.add_argument("--opt_Treport_elbo", action="store_true")
 ap.add_argument("--opt_decgrad", action="store_true", help="use decoder gradient as target of score matching")
 
@@ -443,8 +444,7 @@ if OPTS.batch_test:
         print("--opt_Tlatent_search is not supported in batch test mode right now. Try to implement it.")
     # Load trained model
     model_path = OPTS.model_path
-    #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints_all/checkpoints_0423/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_modeltype-fakegrad_noise-rand_scorenet_tied.pt"
-    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_ebm_lr-0.0003_modeltype-fakegrad_scorenet_tied_train_sgd_steps-1_train_step_size-0.5.pt"
+    model_path = "/scratch/yl1363/lanmt-ebm/checkpoints_cassio/lanmt_annealbudget_batchtokens-4092_distill_ebm_lr-0.0003_modeltype-{}_scorenet_tied_train_delta_steps-4.pt".format(OPTS.modeltype)
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
@@ -468,7 +468,7 @@ if OPTS.batch_test:
     sorted_line_ids = np.argsort([len(l.split()) for l in lines])
     start_time = time.time()
     output_tokens = []
-    elbos, logpys, logpzs, logqzs = [], [], [], []
+    elbos, logpyzs, logpys, logpzs, logqzs = [], [], [], [], []
     i = 0
     while i < len(lines):
         # Make a batch
@@ -491,9 +491,20 @@ if OPTS.batch_test:
         x = torch.tensor(x)
         if torch.cuda.is_available():
             x = x.cuda()
-        with torch.no_grad():
-            targets = scorenet.translate(x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size)
-            #targets = nmt.translate(x, refine_steps=4)
+        if OPTS.modeltype == "fakegrad":
+            with torch.no_grad():
+                targets, z, y_mask = scorenet.translate(x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size)
+        else:
+            targets, z, y_mask = scorenet.translate(x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size)
+        if envswitch.who() != "shu" and OPTS.Treport_log_joint:
+            with torch.no_grad():
+                logpyz, logpy, logpz = nmt.compute_log_joint(x, z, targets, y_mask)
+                logpyz = logpyz.cpu().numpy().tolist()
+                logpy = logpy.cpu().numpy().tolist()
+                logpz = logpz.cpu().numpy().tolist()
+                logpyzs.extend(logpyz)
+                logpys.extend(logpy)
+                logpzs.extend(logpz)
         if envswitch.who() != "shu" and OPTS.Treport_elbo:
             with torch.no_grad():
                 elbo, logpy, logpz, logqz = nmt.compute_elbo(x, targets)
@@ -509,8 +520,16 @@ if OPTS.batch_test:
         output_tokens.extend(target_tokens)
         sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
         sys.stdout.flush()
+    if envswitch.who() != "shu" and OPTS.Treport_log_joint:
+        elbo_file_path = os.path.join(HOME_DIR, "log_joint_file_{}".format(OPTS.modeltype))
+        elbo_file = open(elbo_file_path, "a")
+        elbo_file.write(
+            "{},{},{:.4f},{:.4f},{:.4f}\r\n".format(
+                OPTS.Tsgd_steps, OPTS.Tstep_size,
+                np.mean(logpys), np.mean(logpzs), np.mean(logpyzs)))
+        elbo_file.close()
     if envswitch.who() != "shu" and OPTS.Treport_elbo:
-        elbo_file_path = os.path.join(HOME_DIR, "elbo_file")
+        elbo_file_path = os.path.join(HOME_DIR, "elbo_file_{}".format(OPTS.modeltype))
         elbo_file = open(elbo_file_path, "a")
         elbo_file.write(
             "{},{},{:.4f},{:.4f},{:.4f},{:.4f}\r\n".format(
@@ -575,7 +594,7 @@ if OPTS.evaluate or OPTS.all:
             tb = SummaryWriter(log_dir=tb_logdir, comment="nmtlab")
             tb.add_scalar("BLEU", bleu)
         if envswitch.who() != "shu":
-            bleu_file_path = os.path.join(HOME_DIR, "bleu_file")
+            bleu_file_path = os.path.join(HOME_DIR, "bleu_file_{}".format(OPTS.modeltype))
             bleu_file = open(bleu_file_path, "a")
             bleu_file.write(
                 "{},{},{:.4f}\r\n".format(

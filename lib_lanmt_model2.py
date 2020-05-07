@@ -302,6 +302,30 @@ class LANMTModel2(Transformer):
             import pdb;pdb.set_trace()
         return score_map
 
+    def compute_log_joint(self, x, z, y, y_mask):
+        """Measure the ELBO in the inference time."""
+        latent_dim = self.latent_dim
+        x_mask = self.to_float(torch.ne(x, 0))
+        y_length = y_mask.sum(1).float()
+        batch_size = list(x.shape)[0]
+        y_shape = list(y_mask.shape)
+        vocab_size = self._tgt_vocab_size
+
+        # Source sentence hidden states, shared between prior, posterior, decoder.
+        x_states = self.embed_layer(x)
+        x_states = self.x_encoder(x_states, x_mask)
+
+        # Compute p(z|x)
+        p_prob = self.compute_prior(y_mask, x_states, x_mask)
+
+        logits = self.get_logits(z, y_mask, x_states, x_mask)
+        y_pred = logits.argmax(-1)
+        logpy = self.compute_logpy(logits, y, y_mask)
+        logpz = self.compute_logpz(z, y_mask, p_prob)
+        logpy = (logpy * y_mask).sum(1) / y_length
+        logpz = (logpz * y_mask).sum(1) / y_length
+        return logpy + logpz, logpy, logpz
+
     def compute_elbo(self, x, y, y_mask=None):
         """Measure the ELBO in the inference time."""
         latent_dim = self.latent_dim
@@ -362,19 +386,19 @@ class LANMTModel2(Transformer):
     def translate(self, x, refine_steps=0):
         """ Testing codes.
         """
-        x_mask = self.to_float(torch.ne(x, 0))
+        x_mask = self.to_float(torch.ne(x, 0)).float()
         x_states = self.embed_layer(x)
         x_states = self.x_encoder(x_states, x_mask)
 
         # Predict length
         x_lens = x_mask.sum(1)
         delta = self.predict_length(x_states, x_mask)
-        y_lens = delta + x_lens
+        y_lens = delta.long() + x_lens.long()
         # y_lens = x_lens
         y_max_len = torch.max(y_lens.long()).item()
         batch_size = list(x_states.shape)[0]
         y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len).cuda()
-        y_mask = (y_mask < y_lens[:, None])
+        y_mask = (y_mask < y_lens[:, None]).float()
         # y_mask = x_mask
 
         # Compute p(z|x)
@@ -394,7 +418,7 @@ class LANMTModel2(Transformer):
         y_pred = y_pred * y_mask.long()
         # y_pred = y_pred * x_mask.long()
 
-        return y_pred
+        return y_pred, z, y_mask
 
     def get_BLEU(self, batch_y_hat, batch_y):
         """Get the average smoothed BLEU of the predictions."""
