@@ -125,11 +125,12 @@ def score_matching_loss(score, grad, mask):
     # Compute cosine loss over T and C dimension (ignoring PAD)
     # input : [batch_size, targets_length, latent_size]
     # output : [batch_size]
+    length = mask.sum(1)
     score_norm_squared = (score ** 2) * mask[:, :, None]
     score_norm_squared = score_norm_squared.sum(2).sum(1)
     dot_prod = (score * grad) * mask[:, :, None]
     dot_prod = dot_prod.sum(2).sum(1)
-    return score_norm_squared - 2 * dot_prod
+    return (score_norm_squared - 2 * dot_prod) / length
 
 def cosine_loss_tc(x1, x2, mask):
     # Compute cosine loss over T and C dimension (ignoring PAD)

@@ -52,7 +52,8 @@ envswitch.register(
     )
 )
 envswitch.register(
-    "jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
+    #"jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
+    "jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lvm/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_fastanneal_fixbug2_latentdim-2_lr-0.0003.pt"
 )
 envswitch.register(
     #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints_lanmt/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
@@ -103,6 +104,7 @@ ap.add_argument("--opt_train_interpolate_ratio", default=0.0, type=float)
 ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
 ap.add_argument("--opt_modeltype", default="whichgrad", type=str)
 ap.add_argument("--opt_ebmtype", default="transformer", type=str)
+ap.add_argument("--opt_losstype", default="losstype", type=str)
 ap.add_argument("--opt_modelclass", default="", type=str)
 ap.add_argument("--opt_corrupt", action="store_true")
 ap.add_argument("--opt_Tsgd_steps", default=1, type=int)
@@ -158,8 +160,7 @@ if envswitch.who() == "shu":
     OPTS.result_path = os.path.join(DATA_ROOT, os.path.basename(OPTS.result_path))
     OPTS.fixbug1 = True
     OPTS.fixbug2 = True
-
-if envswitch.who() == "jason_prince":
+else:
     OPTS.model_path = os.path.join(HOME_DIR, "checkpoints", "ebm", OPTS.dtok, os.path.basename(OPTS.model_path))
     OPTS.result_path = os.path.join(HOME_DIR, "checkpoints", "ebm", OPTS.dtok, os.path.basename(OPTS.result_path))
     os.makedirs(os.path.dirname(OPTS.model_path), exist_ok=True)
@@ -198,7 +199,7 @@ if is_root_node():
         except:
             pass
         if envswitch.who() != "shu":
-            tb_str = "{}_lat{}_noise{}_lr{}".format(OPTS.modeltype, OPTS.latentdim, OPTS.noise, OPTS.ebm_lr)
+            tb_str = "{}_{}_lat{}_noise{}_lr{}".format(OPTS.modeltype, OPTS.losstype, OPTS.latentdim, OPTS.noise, OPTS.ebm_lr)
             if OPTS.train_sgd_steps > 0:
                 tb_str += "_imit{}".format(OPTS.train_sgd_steps)
             tb_logdir = os.path.join(HOME_DIR, "tensorboard", "ebm", OPTS.dtok, tb_str)
@@ -307,6 +308,7 @@ if OPTS.scorenet:
         train_sgd_steps=OPTS.train_sgd_steps,
         train_step_size=OPTS.train_step_size,
         train_delta_steps=OPTS.train_delta_steps,
+        losstype=OPTS.losstype,
         modeltype=OPTS.modeltype,
         train_interpolate_ratio=OPTS.train_interpolate_ratio,
         ebm_useconv=OPTS.ebm_useconv,

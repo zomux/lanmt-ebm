@@ -30,7 +30,7 @@ class LatentScoreNetwork6(Transformer):
     def __init__(
         self, lanmt_model, hidden_size=256, latent_size=8,
         noise=1.0, train_sgd_steps=0, train_step_size=0.0, train_delta_steps=2,
-        modeltype="realgrad", train_interpolate_ratio=0.0,
+        losstype="", modeltype="realgrad", train_interpolate_ratio=0.0,
         ebm_useconv=False, direction_n_layers=4, magnitude_n_layers=4,
         enable_valid_grad=True):
         """
@@ -46,11 +46,13 @@ class LatentScoreNetwork6(Transformer):
         self.train_sgd_steps = train_sgd_steps
         self.train_step_size = train_step_size
         self.train_delta_steps = train_delta_steps
+        self.losstype = losstype
         self.modeltype = modeltype
         self.train_interpolate_ratio = train_interpolate_ratio
         self.ebm_useconv = ebm_useconv
         self.direction_n_layers = direction_n_layers
         self.magnitude_n_layers = magnitude_n_layers
+        assert self.losstype in ["cosine", "original"]
         assert self.modeltype in ["realgrad", "fakegrad"]
 
         super(LatentScoreNetwork6, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
@@ -166,8 +168,10 @@ class LatentScoreNetwork6(Transformer):
         # [batch_size, targets_length, latent_size]
         score = self.score_fn.score(z_ini, y_mask, x_states, x_mask)
         # [batch_size]
-        #loss_direction = score_matching_loss(score, z_diff, y_mask)
-        loss_direction = cosine_loss_tc(score, z_diff, y_mask)
+        if self.losstype == "cosine":
+            loss_direction = cosine_loss_tc(score, z_diff, y_mask)
+        if self.losstype == "original":
+            loss_direction = score_matching_loss(score, z_diff, y_mask)
 
         magnitude = self.magnitude_fn(z_ini, y_mask, x_states, x_mask) # [bsz]
         z_diff_norm = (z_diff ** 2) * y_mask[:, :, None]
@@ -179,8 +183,10 @@ class LatentScoreNetwork6(Transformer):
         score_map = {"loss": loss}
 
         if not self.training or self._mycnt % 50 == 0:
-            #score_map["cosine_sim"] = 1 - cosine_loss_tc(score, z_diff, y_mask).mean()
-            score_map["cosine_sim"] = 1 - loss_direction.mean()
+            if self.losstype == "cosine":
+                score_map["cosine_sim"] = 1 - loss_direction.mean()
+            if self.losstype == "original":
+                score_map["cosine_sim"] = 1 - cosine_loss_tc(score, z_diff, y_mask).mean()
             score_map["loss_magnitude"] = loss_magnitude.mean()
             score_map["loss_direction"] = loss_direction.mean()
             score_map["z_diff_norm"] = z_diff_norm.mean()

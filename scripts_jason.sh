@@ -4,6 +4,10 @@ export CUDA_VISIBLE_DEVICES=0
 
 cd /misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/
 
+# 05/09
+python run_ebm.py --opt_dtok iwslt16_deen --opt_latentdim 2 --opt_batchtokens 4092 --opt_distill --opt_scorenet --train --tensorboard --opt_train_delta_steps 4 --opt_modeltype fakegrad --opt_losstype original --opt_fixbug2 --opt_ebm_lr 0.0003
+python run_ebm.py --opt_dtok iwslt16_deen --opt_latentdim 2 --opt_batchtokens 4092 --opt_distill --opt_scorenet --train --tensorboard --opt_train_delta_steps 4 --opt_modeltype realgrad --opt_losstype original --opt_fixbug2 --opt_ebm_lr 0.0003
+
 # 05/08
 python run_ebm.py --opt_dtok iwslt16_deen --opt_latentdim 2 --opt_batchtokens 4092 --opt_distill --opt_scorenet --train --tensorboard --opt_train_delta_steps 4 --opt_modeltype fakegrad --opt_fixbug2 --opt_ebm_lr 0.0003 --opt_train_sgd_steps 1 --opt_train_step_size 0.8
 python run_ebm.py --opt_dtok iwslt16_deen --opt_latentdim 2 --opt_batchtokens 4092 --opt_distill --opt_scorenet --train --tensorboard --opt_train_delta_steps 4 --opt_modeltype fakegrad --opt_fixbug2 --opt_ebm_lr 0.0003
