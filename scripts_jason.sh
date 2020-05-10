@@ -3,8 +3,12 @@
 export CUDA_VISIBLE_DEVICES=0
 
 cd /misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/
+#
+# 05/10 prince without length normalization
+python run_ebm.py --opt_dtok iwslt16_deen --opt_latentdim 2 --opt_batchtokens 4092 --opt_distill --opt_scorenet --train --tensorboard --opt_train_delta_steps 4 --opt_modeltype fakegrad --opt_losstype original --opt_fixbug2 --opt_ebm_lr 0.0003
+python run_ebm.py --opt_dtok iwslt16_deen --opt_latentdim 2 --opt_batchtokens 4092 --opt_distill --opt_scorenet --train --tensorboard --opt_train_delta_steps 4 --opt_modeltype realgrad --opt_losstype original --opt_fixbug2 --opt_ebm_lr 0.0003
 
-# 05/09
+# 05/09 cassio with length normalization
 python run_ebm.py --opt_dtok iwslt16_deen --opt_latentdim 2 --opt_batchtokens 4092 --opt_distill --opt_scorenet --train --tensorboard --opt_train_delta_steps 4 --opt_modeltype fakegrad --opt_losstype original --opt_fixbug2 --opt_ebm_lr 0.0003
 python run_ebm.py --opt_dtok iwslt16_deen --opt_latentdim 2 --opt_batchtokens 4092 --opt_distill --opt_scorenet --train --tensorboard --opt_train_delta_steps 4 --opt_modeltype realgrad --opt_losstype original --opt_fixbug2 --opt_ebm_lr 0.0003
 
