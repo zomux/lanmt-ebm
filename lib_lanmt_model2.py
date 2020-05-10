@@ -196,6 +196,7 @@ class LANMTModel2(Transformer):
         score_map["kl"] = kl
         # Report cross-entropy loss
         score_map["nll"] = score_map["loss"]
+        score_map["neg_elbo"] = score_map["nll"] + score_map["kl"]
         # Cross-entropy loss is *already* backproped when computing softmaxes in shards
         # So only need to compute the remaining losses and then backprop them
         remain_loss = score_map["kl"].clone() * self.KL_weight

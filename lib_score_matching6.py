@@ -166,7 +166,8 @@ class LatentScoreNetwork6(Transformer):
         # [batch_size, targets_length, latent_size]
         score = self.score_fn.score(z_ini, y_mask, x_states, x_mask)
         # [batch_size]
-        loss_direction = score_matching_loss(score, z_diff, y_mask)
+        #loss_direction = score_matching_loss(score, z_diff, y_mask)
+        loss_direction = cosine_loss_tc(score, z_diff, y_mask)
 
         magnitude = self.magnitude_fn(z_ini, y_mask, x_states, x_mask) # [bsz]
         z_diff_norm = (z_diff ** 2) * y_mask[:, :, None]
@@ -178,7 +179,8 @@ class LatentScoreNetwork6(Transformer):
         score_map = {"loss": loss}
 
         if not self.training or self._mycnt % 50 == 0:
-            score_map["cosine_sim"] = 1 - cosine_loss_tc(score, z_diff, y_mask).mean()
+            #score_map["cosine_sim"] = 1 - cosine_loss_tc(score, z_diff, y_mask).mean()
+            score_map["cosine_sim"] = 1 - loss_direction.mean()
             score_map["loss_magnitude"] = loss_magnitude.mean()
             score_map["loss_direction"] = loss_direction.mean()
             score_map["z_diff_norm"] = z_diff_norm.mean()

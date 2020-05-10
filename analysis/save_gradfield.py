@@ -314,281 +314,79 @@ if OPTS.scorenet:
         magnitude_n_layers=OPTS.magnitude_n_layers,
     )
 
-# Training
-if OPTS.train or OPTS.all:
-    # Training code
-    if OPTS.finetune and not OPTS.scorenet:
-        n_valid_per_epoch = 20
-        scheduler = SimpleScheduler(max_epoch=1)
-    elif OPTS.scorenet:
-        n_valid_per_epoch = 10
-        #scheduler = SimpleScheduler(max_epoch=5 if envswitch.who() == "shu" else 200)
-        scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
-    else:
-        scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
-    if OPTS.scorenet and False:
-        optimizer = optim.SGD(nmt.parameters(), lr=0.001)
-    else:
-        optimizer = optim.Adam(nmt.parameters(), lr=OPTS.ebm_lr, betas=(0.9, 0.98), eps=1e-9)
-    trainer = MTTrainer(
-        nmt, dataset, optimizer,
-        scheduler=scheduler, multigpu=gpu_num > 1,
-        using_horovod=horovod_installed)
-    OPTS.trainer = trainer
-    if is_root_node():
-        print("TENSORBOARD : ", tb_logdir)
-    trainer.configure(
-        save_path=OPTS.model_path,
-        n_valid_per_epoch=n_valid_per_epoch,
-        criteria="cosine_sim",
-        comp_fn=max,
-        tensorboard_logdir=tb_logdir,
-        clip_norm=0.1 if OPTS.clipnorm else 0
-    )
-    # if OPTS.fp16:
-    #     from apex import amp
-    #     model, optimizer = amp.initialize(nmt, optimizer, opt_level="O3")
-    if OPTS.finetune and not OPTS.scorenet:
-        pretrain_path = OPTS.model_path.replace("_finetune", "")
-        if is_root_node():
-            print("loading model:", pretrain_path)
-        assert os.path.exists(pretrain_path)
-        nmt.load(pretrain_path)
-    if OPTS.resume:
-        trainer.load()
-    trains_stop_stdout_monitor()
-    trainer.run()
-    trains_restore_stdout_monitor()
+def postprocess(targets, tgt_vocab):
+    target_tokens = targets.cpu().numpy()[0].tolist()
+    if targets is None:
+        target_tokens = [2, 2, 2]
+    # Convert token IDs back to words
+    target_tokens = [t for t in target_tokens if t > 2]
+    target_words = tgt_vocab.decode(target_tokens)
+    #target_sent = " ".join(target_words)
+    return target_words
 
-# Translation
-if OPTS.test or OPTS.all:
-    # Translate using only one GPU
-    if not is_root_node():
-        sys.exit()
-    torch.manual_seed(OPTS.seed)
-    # Load the autoregressive model for rescoring if neccessary
-    if OPTS.Tteacher_rescore:
-        assert os.path.exists(pretrained_autoregressive_path)
-        load_rescoring_transformer(basic_options, pretrained_autoregressive_path)
-    model_path = OPTS.model_path
-    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_modeltype-fakegrad_noise-rand_scorenet_tied.pt"
-    if not os.path.exists(model_path):
-        print("Cannot find model in {}".format(model_path))
-        sys.exit()
-    nmt.load(model_path)
-    print ("Successfully loaded EBM: {}".format(model_path))
-    if torch.cuda.is_available():
-        nmt.cuda()
+# Translate using only one GPU
+torch.manual_seed(OPTS.seed)
+# Load the autoregressive model for rescoring if neccessary
+model_path = OPTS.model_path
+if not os.path.exists(model_path):
+    print("Cannot find model in {}".format(model_path))
+    sys.exit()
+nmt.load(model_path)
+print ("Successfully loaded EBM: {}".format(model_path))
+if torch.cuda.is_available():
+    nmt.cuda()
+nmt.train(False)
+if OPTS.scorenet:
+    scorenet = nmt
+    OPTS.scorenet = scorenet
+    scorenet.train(False)
+    nmt = scorenet.nmt()
     nmt.train(False)
-    if OPTS.scorenet:
-        scorenet = nmt
-        OPTS.scorenet = scorenet
-        scorenet.train(False)
-        nmt = scorenet.nmt()
-        nmt.train(False)
-    src_vocab = Vocab(src_vocab_path)
-    tgt_vocab = Vocab(tgt_vocab_path)
-    result_path = OPTS.result_path
-    # Read data
-    lines = open(test_src_corpus).readlines()
-    latent_candidate_num = OPTS.Tcandidate_num if OPTS.Tlatent_search else None
-    decode_times = []
-    if OPTS.profile:
-        lines = lines * 10
-    if OPTS.test_fix_length > 0:
-        lines = [l for l in lines if len(l.split()) == OPTS.test_fix_length]
-        if not lines:
-            raise SystemError
-        lines = [lines[0]] * 300
-    trains_stop_stdout_monitor()
-    with open(OPTS.result_path, "w") as outf:
-        for i, line in enumerate(lines):
-            # Make a batch
-            tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
-            x = torch.tensor([tokens])
-            if torch.cuda.is_available():
-                x = x.cuda()
-            start_time = time.time()
-            # with torch.no_grad() if not OPTS.scorenet else nullcontext():
-                # Predict latent and target words from prior
-            targets = scorenet.translate(x, n_iter=1, step_size=OPTS.Tstep_size)
-            target_tokens = targets.cpu().numpy()[0].tolist()
-            if targets is None:
-                target_tokens = [2, 2, 2]
-            # Record decoding time
-            end_time = time.time()
-            decode_times.append((end_time - start_time) * 1000.)
-            # Convert token IDs back to words
-            target_tokens = [t for t in target_tokens if t > 2]
-            target_words = tgt_vocab.decode(target_tokens)
-            target_sent = " ".join(target_words)
-            outf.write(target_sent + "\n")
-            sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
-            sys.stdout.flush()
-    sys.stdout.write("\n")
-    trains_restore_stdout_monitor()
-    print("Average decoding time: {:.0f}ms, std: {:.0f}".format(np.mean(decode_times), np.std(decode_times)))
+src_vocab = Vocab(src_vocab_path)
+tgt_vocab = Vocab(tgt_vocab_path)
 
-# Translate multiple sentences in batch
-if OPTS.batch_test:
-    # Translate using only one GPU
-    if not is_root_node():
-        sys.exit()
-    torch.manual_seed(OPTS.seed)
-    if OPTS.Tlatent_search:
-        print("--opt_Tlatent_search is not supported in batch test mode right now. Try to implement it.")
-    # Load trained model
-    model_path = OPTS.model_path
-    if not os.path.exists(model_path):
-        print("Cannot find model in {}".format(model_path))
-        sys.exit()
-    nmt.load(model_path)
-    print ("Successfully loaded EBM: {}".format(model_path))
+lines = open("/scratch/yl1363/lanmt-ebm/analysis/test_sources").readlines()
+
+z_list, grad_list = [], []
+in_grid, out_grid = 10, 2
+grid_size = in_grid + 2 * out_grid + 1
+for i, line in enumerate(lines):
+    # Make a batch
+    tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
+    x = torch.tensor([tokens])
     if torch.cuda.is_available():
-        nmt.cuda()
-    nmt.train(False)
-    if OPTS.scorenet:
-        scorenet = nmt
-        OPTS.scorenet = scorenet
-        scorenet.train(False)
-        nmt = scorenet.nmt()
-        nmt.train(False)
-    src_vocab = Vocab(src_vocab_path)
-    tgt_vocab = Vocab(tgt_vocab_path)
-    result_path = OPTS.result_path
-    # Read data
-    batch_test_size = OPTS.Tbatch_size
-    lines = open(test_src_corpus).readlines()
-    sorted_line_ids = np.argsort([len(l.split()) for l in lines])
-    start_time = time.time()
-    output_tokens = []
-    elbos, logpyzs, logpys, logpzs, logqzs = [], [], [], [], []
-    i = 0
-    while i < len(lines):
-        # Make a batch
-        batch_lines = []
-        max_len = 0
-        while len(batch_lines) * max_len < OPTS.Tbatch_size:
-            line_id = sorted_line_ids[i]
-            line = lines[line_id]
-            length = len(line.split())
-            batch_lines.append(line)
-            if length > max_len:
-                max_len = length
-            i += 1
-            if i >= len(lines):
-                break
-        x = np.zeros((len(batch_lines), max_len + 2), dtype="long")
-        for j, line in enumerate(batch_lines):
-            tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
-            x[j, :len(tokens)] = tokens
-        x = torch.tensor(x)
-        if torch.cuda.is_available():
-            x = x.cuda()
-        with torch.no_grad() if OPTS.modeltype == "fakegrad" else suppress():
-            targets, _, _ = scorenet.translate(x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size)
-            #targets, _, _ = nmt.translate(x, refine_steps=OPTS.Tsgd_steps)
-        if envswitch.who() != "shu" and OPTS.Treport_log_joint:
-            with torch.no_grad():
-                logpyz, logpy, logpz = nmt.compute_log_joint(x, z, targets, y_mask)
-                logpyz = logpyz.cpu().numpy().tolist()
-                logpy = logpy.cpu().numpy().tolist()
-                logpz = logpz.cpu().numpy().tolist()
-                logpyzs.extend(logpyz)
-                logpys.extend(logpy)
-                logpzs.extend(logpz)
-        if envswitch.who() != "shu" and OPTS.Treport_elbo:
-            with torch.no_grad():
-                elbo, logpy, logpz, logqz = nmt.compute_elbo(x, targets)
-                elbo = elbo.cpu().numpy().tolist()
-                logpy = logpy.cpu().numpy().tolist()
-                logpz = logpz.cpu().numpy().tolist()
-                logqz = logqz.cpu().numpy().tolist()
-                elbos.extend(elbo)
-                logpys.extend(logpy)
-                logpzs.extend(logpz)
-                logqzs.extend(logqz)
-        target_tokens = targets.cpu().numpy().tolist()
-        output_tokens.extend(target_tokens)
-        sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
-        sys.stdout.flush()
-    if envswitch.who() != "shu" and OPTS.Treport_log_joint:
-        elbo_file_path = os.path.join(HOME_DIR, "log_joint_file_{}".format(OPTS.modeltype))
-        elbo_file = open(elbo_file_path, "a")
-        elbo_file.write(
-            "{},{},{:.4f},{:.4f},{:.4f}\r\n".format(
-                OPTS.Tsgd_steps, OPTS.Tstep_size,
-                np.mean(logpys), np.mean(logpzs), np.mean(logpyzs)))
-        elbo_file.close()
-    if envswitch.who() != "shu" and OPTS.Treport_elbo:
-        elbo_file_path = os.path.join(HOME_DIR, "elbo_file_{}".format(OPTS.modeltype))
-        elbo_file = open(elbo_file_path, "a")
-        elbo_file.write(
-            "{},{},{:.4f},{:.4f},{:.4f},{:.4f}\r\n".format(
-                OPTS.Tsgd_steps, OPTS.Tstep_size,
-                np.mean(logpys), np.mean(logpzs), np.mean(logqzs), np.mean(elbos)))
-        elbo_file.close()
-
-    with open(OPTS.result_path, "w") as outf:
-        # Record decoding time
-        end_time = time.time()
-        decode_time = (end_time - start_time)
-        # Convert token IDs back to words
-        id_token_pairs = list(zip(sorted_line_ids, output_tokens))
-        id_token_pairs.sort()
-        for _, target_tokens in id_token_pairs:
-            target_tokens = [t for t in target_tokens if t > 2]
-            target_words = tgt_vocab.decode(target_tokens)
-            target_sent = " ".join(target_words)
-            outf.write(target_sent + "\n")
-    sys.stdout.write("\n")
-    print("Batch decoding time: {:.2f}s".format(decode_time))
-
-# Evaluation of translaton quality
-if OPTS.evaluate or OPTS.all:
-    # Post-processing
-    if is_root_node():
-        hyp_path = "/tmp/{}_noise{}_lr{}.txt".format(OPTS.modeltype, OPTS.noise, OPTS.ebm_lr)
-        result_path = OPTS.result_path
-        with open(hyp_path, "w") as outf:
-            for line in open(result_path):
-                # Remove duplicated tokens
-                tokens = line.strip().split()
-                new_tokens = []
-                for tok in tokens:
-                    if len(new_tokens) > 0 and tok != new_tokens[-1]:
-                        new_tokens.append(tok)
-                    elif len(new_tokens) == 0:
-                        new_tokens.append(tok)
-                new_line = " ".join(new_tokens) + "\n"
-                line = new_line
-                # Remove sub-word indicator in sentencepiece and BPE
-                line = line.replace("@@ ", "")
-                if "▁" in line:
-                    line = line.strip()
-                    line = "".join(line.split())
-                    line = line.replace("▁", " ").strip() + "\n"
-                outf.write(line)
-        # Get BLEU score
-        if "iwslt" in OPTS.dtok:
-            evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
-        elif "wmt" in OPTS.dtok:
-           script = "{}/scripts/detokenize.perl".format(os.path.dirname(__file__))
-           os.system("perl {} < {} > {}.detok".format(script, hyp_path, hyp_path))
-           hyp_path = hyp_path + ".detok"
-           evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
-        else:
-            evaluator = MosesBLEUEvaluator(ref_path=ref_path)
-        bleu = evaluator.evaluate(hyp_path)
-        print("BLEU =", bleu)
-        if envswitch.who() == "shu":
-            from tensorboardX import SummaryWriter
-            tb = SummaryWriter(log_dir=tb_logdir, comment="nmtlab")
-            tb.add_scalar("BLEU", bleu)
-        if envswitch.who() != "shu":
-            bleu_file_path = os.path.join(HOME_DIR, "bleu_file_{}".format(OPTS.modeltype))
-            bleu_file = open(bleu_file_path, "a")
-            bleu_file.write(
-                "{},{},{:.4f}\r\n".format(
-                    OPTS.Tsgd_steps, OPTS.Tstep_size, bleu))
-            bleu_file.close()
+        x = x.cuda()
+    x_mask = nmt.to_float(torch.ne(x, 0))
+    x_states = nmt.embed_layer(x)
+    x_states = nmt.x_encoder(x_states, x_mask)
+    with torch.no_grad() if OPTS.modeltype == "fakegrad" else suppress():
+        y0, z0, y_mask = nmt.translate(x, refine_steps=0)
+        y_length = y_mask.size(1)
+        y1, z1, _ = nmt.translate(x, refine_steps=1)
+        y2, z2, _ = nmt.translate(x, refine_steps=2)
+        y3, z3, _ = nmt.translate(x, refine_steps=3)
+        y4, z4, _ = nmt.translate(x, refine_steps=4)
+        z_list.extend([z0, z1, z2, z3, z4])
+        all_zs = torch.cat(z_list, dim=0)
+        #targets, _, _ = scorenet.translate(x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size)
+        z_diff = (z4 - z0)[0] # [len, 2]
+        z_diff_x = z_diff[:, 0] # [len]
+        z_diff_y = z_diff[:, 1] # [len]
+        grid = torch.linspace(-out_grid, in_grid+out_grid, in_grid+out_grid*2+1).cuda() / 10.0 # [grid_size]
+        y_mask_3d = y_mask.repeat(grid_size, 1)
+        z0_3d = z0.repeat(grid_size, 1, 1)
+        for y_grid_idx in range(grid_size):
+            x_grid = grid[:, None, None] * z_diff_x[None, :, None] # [grid_size, len, 1]
+            y_grid = grid[y_grid_idx] * z_diff_y # [len]
+            y_grid = y_grid[None, :, None].repeat(grid_size, 1, 1) # [grid_size, len, 1]
+            z_grid = torch.cat([x_grid, y_grid], dim=2) # [grid_size, len, 2]
+            score = scorenet.score_fn.score(z_grid + z0_3d, y_mask_3d, x_states, x_mask) # [grid_size, len, 2]
+            grad_list.append(score)
+        all_grads = torch.stack(grad_list, dim=1)
+        import ipdb; ipdb.set_trace()
+        ff = open("/scratch/yl1363/lanmt-ebm/analysis/all_grads.npy", "wb")
+        np.save(ff, all_grads.cpu().numpy())
+        ff = open("/scratch/yl1363/lanmt-ebm/analysis/all_zs.npy", "wb")
+        np.save(ff, all_zs.cpu().numpy())
+        import ipdb; ipdb.set_trace()
+        print(1
