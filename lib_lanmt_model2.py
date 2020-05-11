@@ -136,7 +136,7 @@ class LANMTModel2(Transformer):
     def compute_length_predictor_loss(self, x_states, x_mask, y_mask):
         """Get the loss for length predictor.
         """
-        y_lens = y_mask.sum(1)  # TODO(jason) Why -1?? ask raphael
+        y_lens = y_mask.sum(1)
         x_lens = x_mask.sum(1)
         delta = (y_lens - x_lens + 50.).long().clamp(0, 99)
         mean_z = (x_states * x_mask[:, :, None]).sum(1) / x_mask.sum(1)[:, None]
@@ -150,6 +150,8 @@ class LANMTModel2(Transformer):
         return length_scores
 
     def compute_vae_KL(self, p_prob, q_prob):
+        # inputs : [batch_size, targets_length, latent_size]
+        # outputs : [batch_size, targets_length, latent_size]
         q_mean, q_stddev = q_prob[..., :self.latent_dim], F.softplus(q_prob[..., self.latent_dim:])
         p_mean, p_stddev = p_prob[..., :self.latent_dim], F.softplus(p_prob[..., self.latent_dim:])
 
@@ -157,7 +159,6 @@ class LANMTModel2(Transformer):
         kl += torch.log(p_stddev + 1e-8) - torch.log(q_stddev + 1e-8)
         kl += (q_stddev ** 2 + (q_mean - p_mean)**2) / (2 * p_stddev**2)
         kl -= 0.5
-        kl = kl.sum(-1)
         return kl
 
     def predict_length(self, p_states, x_mask):
@@ -171,7 +172,7 @@ class LANMTModel2(Transformer):
     def compute_final_loss(self, q_prob, p_prob, y_mask, score_map):
         """ Compute the report the loss.
         """
-        kl = self.compute_vae_KL(p_prob, q_prob)
+        kl = self.compute_vae_KL(p_prob, q_prob) # [batch_size, targets_length, latent_size]
         # Apply budgets for KL divergence: KL = max(KL, budget)
         budget_upperbound = self.KL_budget
         if self.budget_annealing:
@@ -191,14 +192,13 @@ class LANMTModel2(Transformer):
         score_map["KL_budget"] = torch.tensor(budget)
         # Compute KL divergence
         max_mask = self.to_float((kl - budget) > 0.)
-        kl = kl * max_mask + (1. - max_mask) * budget
-        kl_loss = (kl * y_mask / y_mask.shape[0]).sum()
+        kl = kl * max_mask + (1. - max_mask) * budget # [batch_size, targets_length, latent_size]
+        kl = (kl * y_mask[:, :, None]).sum() / y_mask.sum() # [1]
         # Report KL divergence
-        score_map["kl"] = kl_loss
-        # Also report the averge KL for each token
-        score_map["tok_kl"] = (kl * y_mask / y_mask.sum()).sum()
+        score_map["kl"] = kl
         # Report cross-entropy loss
         score_map["nll"] = score_map["loss"]
+        score_map["neg_elbo"] = score_map["nll"] + score_map["kl"]
         # Cross-entropy loss is *already* backproped when computing softmaxes in shards
         # So only need to compute the remaining losses and then backprop them
         remain_loss = score_map["kl"].clone() * self.KL_weight
@@ -220,6 +220,30 @@ class LANMTModel2(Transformer):
         q_states = self.q_encoder_xy(y_states, y_mask, x_states, x_mask)
         q_prob = self.q_hid2lat(q_states)
         return q_prob
+
+    def compute_logpy(self, logits, y, y_mask):
+        shape = logits.shape
+        nll = F.cross_entropy(
+            logits.view(shape[0] * shape[1], -1),
+            y.view(shape[0] * shape[1]), reduction="none", ignore_index=0)
+        logpy = -1 * nll
+        logpy = logpy.view(shape[0], shape[1])
+        return logpy # [bsz, targets_length]
+
+    def compute_logpz(self, z, y_mask, p_prob):
+        latent_dim = self.latent_dim
+        p_mean, p_stddev = p_prob[..., :latent_dim], F.softplus(p_prob[..., latent_dim:])
+        logpz = -0.5 * ( (z - p_mean) / p_stddev ) ** 2 - torch.log(p_stddev * math.sqrt(2 * math.pi))
+        logpz = logpz.sum(2)
+        return logpz # [bsz, targets_length]
+
+    def compute_logqz(self, z, y, y_mask, x_states, x_mask):
+        latent_dim = self.latent_dim
+        q_prob = self.compute_posterior(y, y_mask, x_states, x_mask)
+        q_mean, q_stddev = q_prob[..., :latent_dim], F.softplus(q_prob[..., latent_dim:])
+        logqz = -0.5 * ( (z - q_mean) / q_stddev ) ** 2 - torch.log(q_stddev * math.sqrt(2 * math.pi))
+        logqz = logqz.sum(2)
+        return logqz # [bsz, targets_length]
 
     def forward(self, x, y, sampling=False, return_code=False):
         """Model training.
@@ -252,7 +276,8 @@ class LANMTModel2(Transformer):
 
         # --------------------------  Compute losses ------------------------#
         decoder_outputs = TensorMap({"final_states": decoder_states})
-        denom = x.shape[0]
+        #denom = x.shape[0]
+        denom = None
         if self._shard_size is not None and self._shard_size > 0:
             loss_scores, decoder_tensors, decoder_grads = self.compute_shard_loss(
                 decoder_outputs, y, y_mask, denominator=denom, ignore_first_token=False, backward=False
@@ -276,72 +301,108 @@ class LANMTModel2(Transformer):
             decoder_grads.append(None)
             torch.autograd.backward(decoder_tensors, decoder_grads)
         if torch.isnan(score_map["loss"]) or torch.isinf(score_map["loss"]):
-            import pdb;pdb.set_trace()
+            import ipdb; ipdb.set_trace()
         return score_map
 
-    def measure_ELBO(self, x, y, x_mask=None, x_states=None, p_prob=None):
+    def compute_log_joint(self, x, z, y, y_mask):
         """Measure the ELBO in the inference time."""
-        y_mask = self.to_float(torch.ne(y, 0))
-        batch_size = list(y.shape)[0]
-        y_shape = list(y.shape)
+        latent_dim = self.latent_dim
+        x_mask = self.to_float(torch.ne(x, 0))
+        y_length = y_mask.sum(1).float()
+        batch_size = list(x.shape)[0]
+        y_shape = list(y_mask.shape)
+        vocab_size = self._tgt_vocab_size
 
         # Source sentence hidden states, shared between prior, posterior, decoder.
-        if p_prob is None or x_states is None or x_mask is None:
-            x_mask = self.to_float(torch.ne(x, 0))
-            x_states = self.embed_layer(x)
-            x_states = self.x_encoder(x_states, x_mask)
+        x_states = self.embed_layer(x)
+        x_states = self.x_encoder(x_states, x_mask)
 
-            # Compute p(z|x)
-            pos_states = self.pos_embed_layer(y).expand(y_shape + [self.hidden_size])
-            p_states = self.prior_encoder(pos_states, y_mask, x_states, x_mask)
-            p_prob = self.p_hid2lat(p_states)
+        # Compute p(z|x)
+        p_prob = self.compute_prior(y_mask, x_states, x_mask)
+
+        logits = self.get_logits(z, y_mask, x_states, x_mask)
+        y_pred = logits.argmax(-1)
+        logpy = self.compute_logpy(logits, y, y_mask)
+        logpz = self.compute_logpz(z, y_mask, p_prob)
+        logpy = (logpy * y_mask).sum(1) / y_length
+        logpz = (logpz * y_mask).sum(1) / y_length
+        return logpy + logpz, logpy, logpz
+
+    def compute_elbo(self, x, y, y_mask=None):
+        """Measure the ELBO in the inference time."""
+        latent_dim = self.latent_dim
+        x_mask = self.to_float(torch.ne(x, 0))
+        if y_mask == None:
+            y_mask = self.to_float(torch.ne(y, 0))
+        y_length = y_mask.sum(1).float()
+        batch_size = list(x.shape)[0]
+        y_shape = list(y.shape)
+        vocab_size = self._tgt_vocab_size
+
+        # Source sentence hidden states, shared between prior, posterior, decoder.
+        x_states = self.embed_layer(x)
+        x_states = self.x_encoder(x_states, x_mask)
+
+        # Compute p(z|x)
+        p_prob = self.compute_prior(y_mask, x_states, x_mask)
 
         # Compute q(z|x,y)
-        y_states = self.embed_layer(y)
-        q_states = self.q_encoder_xy(y_states, y_mask, x_states, x_mask)
-        q_prob = self.q_hid2lat(q_states)
-        q_mean, q_stddev = (
-          q_prob[..., :self.latent_dim],
-          F.softplus(q_prob[..., self.latent_dim:]))
+        q_prob = self.compute_posterior(y, y_mask, x_states, x_mask)
+        q_mean, q_stddev = q_prob[..., :latent_dim], F.softplus(q_prob[..., latent_dim:])
 
-        likelihood_list = []
+        logpy_list, logpz_list, logqz_list = [], [], []
         for _ in range(20):
             z_q = q_mean + q_stddev * torch.randn_like(q_stddev)
-            hid_q = self.lat2hid(z_q)
-            decoder_states = self.decoder(hid_q, y_mask, x_states, x_mask)
-            logits = self.expander_nn(decoder_states)
-            shape = logits.shape
-            likelihood = - F.cross_entropy(
-                logits.view(-1, shape[-1]),
-                y.view(-1),
-                reduction="sum", ignore_index=0)
-            likelihood = likelihood / y_mask.sum()
-            likelihood_list.append(likelihood)
+            logits = self.get_logits(z_q, y_mask, x_states, x_mask)
+            y_pred = logits.argmax(-1)
+            logpy = self.compute_logpy(logits, y, y_mask)
+            logpz = self.compute_logpz(z_q, y_mask, p_prob)
+            logqz = self.compute_logqz(z_q, y_pred, y_mask, x_states, x_mask)
+            logpy_list.append((logpy * y_mask).sum(1) / y_length)
+            logpz_list.append((logpz * y_mask).sum(1) / y_length)
+            logqz_list.append((logqz * y_mask).sum(1) / y_length)
 
-        kl = self.compute_vae_KL(p_prob, q_prob)
-        kl = (kl * y_mask).sum() / y_mask.sum()
-        mean_likelihood = sum(likelihood_list) / len(likelihood_list)
-        elbo = mean_likelihood - kl
-        return elbo
+        logpy_ = sum(logpy_list) / 20.0
+        logpz_ = sum(logpz_list) / 20.0
+        logqz_ = sum(logqz_list) / 20.0
+        elbo = logpy_ + logpz_ - logqz_
+        return elbo, logpy_, logpz_, logqz_
+
+    def delta_refine(self, z, y_mask, x_states, x_mask, n_iter=1):
+        for idx in range(n_iter):
+            logits = self.get_logits(z, y_mask, x_states, x_mask)
+            y_pred = logits.argmax(-1)
+            y_pred = y_pred * y_mask.long()
+            y_states = self.embed_layer(y_pred)
+            q_states = self.q_encoder_xy(y_states, y_mask, x_states, x_mask)
+            q_prob = self.q_hid2lat(q_states)
+            z = q_prob[..., :self.latent_dim]
+        return z
+
+    def get_logits(self, z, y_mask, x_states, x_mask):
+        hid = self.lat2hid(z)
+        decoder_states = self.decoder(hid, y_mask, x_states, x_mask)
+        logits = self.expander_nn(decoder_states)
+        return logits
 
     def translate(self, x, refine_steps=0):
         """ Testing codes.
         """
-        x_mask = self.to_float(torch.ne(x, 0))
+        x_mask = self.to_float(torch.ne(x, 0)).float()
         x_states = self.embed_layer(x)
         x_states = self.x_encoder(x_states, x_mask)
 
         # Predict length
         x_lens = x_mask.sum(1)
         delta = self.predict_length(x_states, x_mask)
-        y_lens = delta + x_lens
+        y_lens = delta.long() + x_lens.long()
         # y_lens = x_lens
         y_max_len = torch.max(y_lens.long()).item()
         batch_size = list(x_states.shape)[0]
         y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len)
         if torch.cuda.is_available():
             y_mask = y_mask.cuda()
-        y_mask = (y_mask < y_lens[:, None])
+        y_mask = (y_mask < y_lens[:, None]).float()
         # y_mask = x_mask
 
         # Compute p(z|x)
@@ -352,16 +413,7 @@ class LANMTModel2(Transformer):
         z = p_prob[..., :self.latent_dim]
 
         # Perform refinement
-        for refine_idx in range(refine_steps):
-            hid = self.lat2hid(z)
-            decoder_states = self.decoder(hid, y_mask, x_states, x_mask)
-            logits = self.expander_nn(decoder_states)
-            y_pred = logits.argmax(-1)
-            y_pred = y_pred * y_mask.long()
-            y_states = self.embed_layer(y_pred)
-            q_states = self.q_encoder_xy(y_states, y_mask, x_states, x_mask)
-            q_prob = self.q_hid2lat(q_states)
-            z = q_prob[..., :self.latent_dim]
+        z = self.delta_refine(z, y_mask, x_states, x_mask, n_iter=refine_steps)
 
         hid = self.lat2hid(z)
         decoder_states = self.decoder(hid, y_mask, x_states, x_mask)
@@ -370,7 +422,7 @@ class LANMTModel2(Transformer):
         y_pred = y_pred * y_mask.long()
         # y_pred = y_pred * x_mask.long()
 
-        return y_pred
+        return y_pred, z, y_mask
 
     def get_BLEU(self, batch_y_hat, batch_y):
         """Get the average smoothed BLEU of the predictions."""

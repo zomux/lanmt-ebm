@@ -13,91 +13,26 @@ from torch import autograd
 import numpy as np
 import math
 import os
+from contextlib import suppress
 import sys
 sys.path.append(".")
 
-from lib_lanmt_modules import TransformerEncoder
+from lib_ebm_modules import ConvNetEnergyFn, EnergyFn, ScoreFn, cosine_loss_tc, score_matching_loss
 from lib_lanmt_model2 import LANMTModel2
-from lib_lanmt_modules import TransformerCrossEncoder
-from lib_simple_encoders import ConvolutionalEncoder, ConvolutionalCrossEncoder
 from lib_corrpution import random_token_corruption
 from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
 
 from lib_envswitch import envswitch
 
-class EnergyFn(nn.Module):
-    def __init__(self, D_lat, D_hid, dropout_ratio=0.1, D_mlp_hid=100, n_layers=3, positive=False):
-        super(EnergyFn, self).__init__()
-        self.lat2hid = nn.Linear(
-            D_lat, D_hid)
-        self.transformer = TransformerCrossEncoder(
-            embed_layer=None, size=D_hid, n_layers=n_layers, dropout_ratio=dropout_ratio)
-        self.conv = ConvolutionalEncoder(
-            embed_layer=None, size=D_hid, n_layers=n_layers, dropout_ratio=dropout_ratio,
-            cross_attention=False, skip_connect=False)
-        self.hid2energy = nn.Sequential(
-            nn.Dropout(p=dropout_ratio),
-            nn.Linear(D_hid, D_mlp_hid),
-            nn.ELU(),
-            nn.Dropout(p=dropout_ratio),
-            nn.Linear(D_mlp_hid, 1)
-        )
-        self.positive = positive
-
-    def forward(self, z, y_mask, x_states, x_mask):
-        # input : [batch_size, targets_length, latent_size]
-        # output : [batch_size]
-        h = self.lat2hid(z)
-        energy = self.transformer(h, y_mask, x_states, x_mask)
-        energy = energy * y_mask[:, :, None]
-        energy = self.conv(energy, y_mask)
-        energy = energy + (1 - y_mask)[:, :, None] * (-999999.)
-        energy = energy.max(dim=1)[0]
-        energy = self.hid2energy(energy)
-        if self.positive:
-            energy = F.softplus(energy)
-        return energy[:, 0]
-
-    def score(self, z, y_mask, x_states, x_mask, create_graph=True):
-        energy = self.forward(z, y_mask, x_states, x_mask)
-        dummy = torch.ones_like(energy)
-        dummy.requires_grad = True
-        grad = autograd.grad(energy, z, create_graph=create_graph, grad_outputs=dummy)
-        score = grad[0] # [bsz, length, latent_dim]
-        return score
-
-class ScoreFn(nn.Module):
-    def __init__(self, D_lat, D_hid, D_fin, dropout_ratio=0.1, D_mlp_hid=100, n_layers=4, positive=False):
-        super(ScoreFn, self).__init__()
-        self.lat2hid = nn.Linear(
-            D_lat, D_hid)
-        self.transformer = TransformerCrossEncoder(
-            embed_layer=None, size=D_hid, n_layers=n_layers, dropout_ratio=dropout_ratio)
-        self.hid2score = nn.Linear(
-            D_hid, D_fin)
-        self.positive = positive
-
-    def forward(self, z, y_mask, x_states, x_mask):
-        # input : [batch_size, targets_length, latent_size]
-        # output : [batch_size, targets_length, final_size]
-        h = self.lat2hid(z)
-        score = self.transformer(h, y_mask, x_states, x_mask)
-        score = self.hid2score(score)
-        if self.positive:
-            score = F.softplus(score)
-        return score * y_mask[:, :, None]
-
-    def score(self, z, y_mask, x_states, x_mask):
-        return self.forward(z, y_mask, x_states, x_mask)
-
 class LatentScoreNetwork6(Transformer):
 
     def __init__(
         self, lanmt_model, hidden_size=256, latent_size=8,
-        noise=0.1, targets="logpy", decoder="fixed", imitation=False,
-        imit_rand_steps=1, cosine="T", refine_from_mean=False,
-        modeltype="realgrad", enable_valid_grad=True):
+        noise=1.0, train_sgd_steps=0, train_step_size=0.0, train_delta_steps=2,
+        losstype="", modeltype="realgrad", train_interpolate_ratio=0.0,
+        ebm_useconv=False, direction_n_layers=4, magnitude_n_layers=4,
+        enable_valid_grad=True):
         """
         Args:
             lanmt_model(LANMTModel)
@@ -107,17 +42,18 @@ class LatentScoreNetwork6(Transformer):
         self.set_stepwise_training(False)
 
         self._mycnt = 0
-        self.imitation = imitation
-        self.imit_rand_steps = imit_rand_steps
-        self.cosine = cosine
         self.noise = noise
-        self.refine_from_mean = refine_from_mean
+        self.train_sgd_steps = train_sgd_steps
+        self.train_step_size = train_step_size
+        self.train_delta_steps = train_delta_steps
+        self.losstype = losstype
         self.modeltype = modeltype
+        self.train_interpolate_ratio = train_interpolate_ratio
+        self.ebm_useconv = ebm_useconv
+        self.direction_n_layers = direction_n_layers
+        self.magnitude_n_layers = magnitude_n_layers
+        assert self.losstype in ["cosine", "original"]
         assert self.modeltype in ["realgrad", "fakegrad"]
-        assert cosine in ["C", "TC"]
-        # TC : maximize cosine_sim(z_diff, score, dims=[1,2])
-        #  C : maximize cosine_sim(z_diff, score1, dims=[2])
-        #      maximize cosine_sim(z_diff.norm(2), score2, dims=[1])
 
         super(LatentScoreNetwork6, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         lanmt_model.train(False)
@@ -127,59 +63,30 @@ class LatentScoreNetwork6(Transformer):
 
     def prepare(self):
         D_lat, D_hid = self._latent_size, self._hidden_size
+        energy_cls = ConvNetEnergyFn if self.ebm_useconv else EnergyFn
+        self.magnitude_fn = energy_cls(
+            D_lat, D_hid, n_layers=self.magnitude_n_layers, positive=True) # Learn z_diff.norm(1, 2)
         if self.modeltype == "realgrad": # Learn the energy function
-            self.score_fn = EnergyFn(D_lat, D_hid, positive=False)
+            self.score_fn = energy_cls(
+                D_lat, D_hid, n_layers=self.direction_n_layers, positive=False)
         elif self.modeltype == "fakegrad": # Directly learn the gradient of the energy
-            self.score_fn = ScoreFn(D_lat, D_hid, D_lat, positive=False)
+            self.score_fn = ScoreFn(
+                D_lat, D_hid, D_lat, n_layers=self.direction_n_layers, positive=False)
 
-        if self.cosine == "C":
-            # Learn z_diff.norm(2)
-            self.score_fn2 = ScoreFn(D_lat, D_hid, 1, positive=True)
-            self.cosine_loss = cosine_loss_c
-        elif self.cosine == "TC":
-            self.cosine_loss = cosine_loss_tc
-
-        self.magnitude_fn = EnergyFn(D_lat, D_hid, positive=True) # Learn z_diff.norm(1, 2)
-
-    def delta_refine(self, z, y_mask, x_states, x_mask, n_iter=1):
-        lanmt = self.nmt()
-        for idx in range(n_iter):
-            hid = lanmt.lat2hid(z)
-            decoder_states = lanmt.decoder(hid, y_mask, x_states, x_mask)
-            logits = lanmt.expander_nn(decoder_states)
-            y_pred = logits.argmax(-1)
-            y_pred = y_pred * y_mask.long()
-            y_states = lanmt.embed_layer(y_pred)
-            q_states = lanmt.q_encoder_xy(y_states, y_mask, x_states, x_mask)
-            q_prob = lanmt.q_hid2lat(q_states)
-            z = q_prob[..., :lanmt.latent_dim]
-        return z
-
-    def energy_sgd(self, z, y_mask, x_states, x_mask, n_iter):
+    def energy_sgd(self, z, y_mask, x_states, x_mask, n_iter, step_size):
         # z : [bsz, y_length, lat_size]
         y_length = y_mask.sum(1).float()
-        if n_iter == 4:
-            lrs = [0.3] * 4
-        elif n_iter == 3:
-            lrs = [0.5] * 3
-        elif n_iter == 2:
-            lrs = [0.6] * 2
-        else:
-            lrs = [0.5] * n_iter
         for idx in range(n_iter):
             z = z.detach().clone(   )
             z.requires_grad = True
 
             magnitude = self.magnitude_fn(z, y_mask, x_states, x_mask) # [bsz]
 
-            score = self.score_fn.score(z, y_mask, x_states, x_mask).detach()
+            score = self.score_fn.score(z, y_mask, x_states, x_mask, create_graph=False).detach()
             score_norm = (score ** 2) * y_mask[:, :, None]
             score_norm = score_norm.sum(2).sum(1).sqrt()
             multiplier = magnitude * y_length.sqrt() / score_norm
-            print("iter=", idx, "mag=", float(magnitude.cpu().detach().numpy()[0]), "z_norm=", float(z.norm().cpu().detach().numpy())
-)
-            #multiplier = y_length.sqrt() / score_norm
-            score = score * multiplier[:, None, None] * lrs[idx]
+            score = score * multiplier[:, None, None] * step_size
 
             z = z + score
         return z
@@ -238,17 +145,21 @@ class LatentScoreNetwork6(Transformer):
         z_ini = p_mean
         if self.training:
             stddev = p_stddev * torch.randn_like(p_stddev)
-            if self.noise == "rand":
-                stddev = stddev * np.random.random_sample()
+            stddev = stddev * np.random.random_sample() * self.noise
             z_ini += stddev
-
+            if self.train_sgd_steps > 0 and self._mycnt > 50000 and np.random.random_sample() < 0.5:
+                with torch.no_grad() if self.modeltype == "fakegrad" else suppress():
+                    z_ini = self.energy_sgd(
+                        z_ini, y_mask, x_states, x_mask,
+                        n_iter=self.train_sgd_steps, step_size=self.train_step_size)
+            if self.train_interpolate_ratio > 0.0 and self._mycnt > 50000 and np.random.random_sample() < 0.5:
+                with torch.no_grad():
+                    z_fin = lanmt.delta_refine(
+                        z_ini, y_mask, x_states, x_mask, n_iter=self.train_delta_steps)
+                    z_ini = z_ini + (z_fin - z_ini) * np.random.random_sample() * self.train_interpolate_ratio
         with torch.no_grad():
-            z_delta = self.delta_refine(z_ini, y_mask, x_states, x_mask, n_iter=OPTS.deltasteps)
-            if OPTS.fin == "y":
-                z_fin = self.nmt().compute_posterior(y, y_mask, x_states, x_mask)
-                z_fin = z_fin[:, :, :latent_dim]
-            else:
-                z_fin = z_delta
+            z_fin = lanmt.delta_refine(
+                z_ini, y_mask, x_states, x_mask, n_iter=self.train_delta_steps)
 
         z_ini = z_ini.detach().clone()
         z_ini.requires_grad = True
@@ -256,7 +167,7 @@ class LatentScoreNetwork6(Transformer):
         z_diff = (z_fin - z_ini).detach() # [batch_size, targets_length, latent_size]
         if OPTS.corrupt:
             with torch.no_grad():
-                # logits = self.get_logits(z_fin, y_mask, x_states, x_mask)
+                # logits = lanmt.get_logits(z_fin, y_mask, x_states, x_mask)
                 # y_delta = logits.argmax(-1)
                 y_noise, _ = random_token_corruption(y, self._tgt_vocab_size, 0.2)
                 z_noise = self.nmt().compute_posterior(y_noise, y_mask, x_states, x_mask)
@@ -267,12 +178,13 @@ class LatentScoreNetwork6(Transformer):
                 z_diff = (z_fin - z_ini).detach()
             z_ini.requires_grad_(True)
 
-        score = self.score_fn.score(z_ini, y_mask, x_states, x_mask) # [batch_size, targets_length, latent_size]
-        loss_direction = self.cosine_loss(score, z_diff, y_mask) # [batch_size]
-        if self.cosine == "C":
-            z_diff_norm = z_diff.norm(2) # [batch_size, targets_length]
-            pred_norm_1d = self.score_fn2(z_ini, y_mask, x_states, x_mask)[:, :, 0] # [batch_size, targets_length]
-            loss_direction2 = cosine_loss_t(z_diff_norm, pred_norm_1d, y_mask)
+        # [batch_size, targets_length, latent_size]
+        score = self.score_fn.score(z_ini, y_mask, x_states, x_mask)
+        # [batch_size]
+        if self.losstype == "cosine":
+            loss_direction = cosine_loss_tc(score, z_diff, y_mask)
+        if self.losstype == "original":
+            loss_direction = score_matching_loss(score, z_diff, y_mask)
 
         magnitude = self.magnitude_fn(z_ini, y_mask, x_states, x_mask) # [bsz]
         z_diff_norm = (z_diff ** 2) * y_mask[:, :, None]
@@ -280,25 +192,18 @@ class LatentScoreNetwork6(Transformer):
         loss_magnitude = (magnitude - z_diff_norm) ** 2
 
         loss = loss_magnitude + loss_direction
-        if self.cosine == "C":
-            loss += loss_direction2
         loss = loss.mean(0)
         score_map = {"loss": loss}
 
         if not self.training or self._mycnt % 50 == 0:
-            score_map["cosine_sim"] = 1 - loss_direction.mean()
+            if self.losstype == "cosine":
+                score_map["cosine_sim"] = 1 - loss_direction.mean()
+            if self.losstype == "original":
+                score_map["cosine_sim"] = 1 - cosine_loss_tc(score, z_diff, y_mask).mean()
             score_map["loss_magnitude"] = loss_magnitude.mean()
             score_map["loss_direction"] = loss_direction.mean()
             score_map["z_diff_norm"] = z_diff_norm.mean()
             score_map["magnitude"] = magnitude.mean()
-            updated_z = self.energy_sgd(z_delta, y_mask, x_states, x_mask, n_iter=1)
-            with torch.no_grad():
-                oracle_z = self.nmt().compute_posterior(y, y_mask, x_states, x_mask)
-                oracle_z = oracle_z[:, :, :latent_dim]
-            score_map["final_dist"] = self.euc_distance(updated_z, oracle_z, y_mask)
-            if self.cosine == "C":
-                score_map["cosine_sim2"] = 1 - loss_direction2.mean()
-                score_map["loss_direction2"] = loss_direction2.mean()
         return score_map
 
     def forward(self, x, y, sampling=False):
@@ -308,7 +213,7 @@ class LatentScoreNetwork6(Transformer):
         self._mycnt += 1 # pretty hacky I know, sorry haha
         return score_map
 
-    def translate(self, x, n_iter):
+    def translate(self, x, n_iter, step_size):
         """ Testing codes.
         """
         lanmt = self.nmt()
@@ -329,68 +234,23 @@ class LatentScoreNetwork6(Transformer):
         # y_mask = x_mask
 
         # Compute p(z|x)
-        p_prob = lanmt.compute_prior(y_mask, x_states, x_mask)
+        with torch.no_grad():
+            p_prob = lanmt.compute_prior(y_mask, x_states, x_mask)
         z = p_prob[..., :lanmt.latent_dim]
         if OPTS.Twithout_ebm:
             z_ = z
         else:
-            z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter)
+            with torch.no_grad() if self.modeltype == "fakegrad" else suppress():
+                z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, step_size=step_size)
 
-        logits = self.get_logits(z_, y_mask, x_states, x_mask)
+        with torch.no_grad():
+            logits = lanmt.get_logits(z_, y_mask, x_states, x_mask)
         y_pred = logits.argmax(-1)
         y_pred = y_pred * y_mask.long()
-        return y_pred
+        return y_pred, z_, y_mask
 
     def nmt(self):
         return self._lanmt[0]
-
-def mean_bt(tensor, mask):
-    # Average across the Batch and Time dimension (given a binary mask)
-    assert tensor.shape == mask.shape
-    return (tensor * mask).sum() / mask.sum()
-
-def mean_t(tensor, mask):
-    # Average across the Time dimension (given a binary mask)
-    assert tensor.shape == mask.shape
-    return (tensor * mask).sum(1) / mask.sum(1)
-
-def cosine_loss_tc(x1, x2, mask):
-    # Compute cosine loss over T and C dimension (ignoring PAD)
-    # input : [batch_size, targets_length, latent_size]
-    # output : [batch_size]
-    x1_norm = (x1 ** 2) * mask[:, :, None]
-    x1_norm = x1_norm.sum(2).sum(1).sqrt()
-    x2_norm = (x2 ** 2) * mask[:, :, None]
-    x2_norm = x2_norm.sum(2).sum(1).sqrt()
-    num = (x1 * x2) * mask[:, :, None]
-    num = num.sum(2).sum(1)
-    denom = x1_norm * x2_norm
-    sim = num / denom
-
-    return 1 - sim # [bsz]
-
-def cosine_loss_c(x1, x2, mask):
-    # Compute cosine loss over C dimension (ignoring PAD)
-    # input : [batch_size, targets_length, latent_size]
-    # output : [batch_size]
-    sim = F.cosine_similarity(x1, x2, dim=2)
-    sim = mean_t(sim, mask) # [bsz]
-    return 1 - sim
-
-def cosine_loss_t(x1, x2, mask):
-    # Compute cosine loss over T dimension (ignoring PAD)
-    # input : [batch_size, targets_length]
-    # output : [batch_size]
-    x1_norm = (x1 ** 2) * mask
-    x1_norm = x1_norm.sum(1).sqrt()
-    x2_norm = (x2 ** 2) * mask
-    x2_norm = x2_norm.sum(1).sqrt()
-    num = (x1 * x2) * mask
-    num = num.sum(1)
-    denom = x1_norm * x2_norm
-    sim = num / denom
-
-    return 1 - sim # [bsz]
 
 if __name__ == '__main__':
     import sys
