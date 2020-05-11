@@ -114,9 +114,11 @@ class LANMTModel2(Transformer):
           def __call__(self, x):
             return x @ torch.transpose(embed_layer.weight, 0, 1) + final_bias
 
-        self.expander_nn = FinalLinear()
         if envswitch.who() == "shu":
             self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
+        else:
+            self.expander_nn = FinalLinear()
+
         # NOTE forced tying
         # if True or self.tied:
         #  self.expander_nn.weight = self.embed_layer.weight
@@ -263,9 +265,10 @@ class LANMTModel2(Transformer):
         score_map, remain_loss = self.compute_final_loss(q_prob, p_prob, y_mask, score_map)
         # Report smoothed BLEU during validation
         if not torch.is_grad_enabled() and self.training_criteria == "BLEU":
+            decoder_outputs.unselect_batch()
             logits = self.expander_nn(decoder_outputs["final_states"])
             predictions = logits.argmax(-1)
-            score_map["BLEU"] = - self.get_BLEU(predictions, y)
+            score_map["BLEU"] = - self.get_BLEU((predictions * y_mask).long(), (y * y_mask).long())
 
         # --------------------------  Bacprop gradient --------------------#
         if self._shard_size is not None and self._shard_size > 0 and decoder_tensors is not None:
@@ -336,6 +339,8 @@ class LANMTModel2(Transformer):
         y_max_len = torch.max(y_lens.long()).item()
         batch_size = list(x_states.shape)[0]
         y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len)
+        if torch.cuda.is_available():
+            y_mask = y_mask.cuda()
         y_mask = (y_mask < y_lens[:, None])
         # y_mask = x_mask
 
@@ -380,4 +385,4 @@ class LANMTModel2(Transformer):
             hyp = hyp[1:]
             ref = ref[1:]
             bleus.append(smoothed_bleu(hyp, ref))
-        return torch.tensor(np.mean(bleus) * 100.)
+        return torch.tensor(np.mean(bleus))

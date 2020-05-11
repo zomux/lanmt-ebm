@@ -80,6 +80,8 @@ class IndependentEnergyMT(Transformer):
                 nn.ReLU(),
                 nn.Linear(self._hidden_size // 2, 1)
             )
+        if OPTS.mimic:
+            self.mimic_ebm = ConvolutionalCrossEncoder(None, self._latent_size, 3)
 
     def compute_energy(self, z, y_mask, x_states, x_mask):
         if y_mask is not None:
@@ -109,6 +111,11 @@ class IndependentEnergyMT(Transformer):
             noise_z = self.encoder(noise_y_embed, mask=y_mask)
         return noise_z, x_states
 
+    def euc_distance(self, z1, z2, mask):
+        distance = ((z2 - z1)**2).sum(2)
+        distance = (distance * mask).sum(1) / mask.sum(1)
+        return distance.mean()
+
     def compute_logits(self, x, x_mask, noise_y, y_mask):
         if len(noise_y.shape) == 3:
             refined_z = noise_y
@@ -121,10 +128,24 @@ class IndependentEnergyMT(Transformer):
                 for _ in range(OPTS.nrefine):
                     energy, energy_grad = self.compute_energy(refined_z, y_mask, x_states, x_mask)
                     refined_z = refined_z - energy_grad
+                if OPTS.mimic and False:
+                    mimic_grad = self.mimic_ebm(noise_z.detach(), y_mask, x_states, x_mask)
+                    if OPTS.mimic_cos:
+                        loss_direction = self.cosine_loss(score, z_diff, y_mask)  # [batch_size]
+                    else:
+                        OPTS.mimic_loss = self.euc_distance(mimic_grad, energy_grad.detach(), y_mask)
+
             elif OPTS.modeltype == "forward":
                 _, refined_z = self.compute_energy(noise_z, y_mask, x_states, x_mask)
             else:
                 raise NotImplementedError
+        OPTS.refined_z = refined_z
+        if not self.training and OPTS.mimic:
+            grad = self.mimic_ebm(refined_z, y_mask, x_states, x_mask)
+            refined_z = refined_z + grad * 0.6
+            grad = self.mimic_ebm(refined_z, y_mask, x_states, x_mask)
+            refined_z = refined_z + grad * 0.6
+
         # Compute decoder and get logits
         if OPTS.dectype.startswith("cross"):
             decoder_states = self.decoder(refined_z, y_mask, x_states, x_mask)
@@ -144,7 +165,7 @@ class IndependentEnergyMT(Transformer):
         bsize, ylen = y.shape
         # Corruption the target sequence to get input
         if OPTS.corruption == "target":
-            noise_y, noise_mask = random_token_corruption(y, self._tgt_vocab_size, OPTS.corrupt)
+            noise_y, noise_mask = random_token_corruption(y, self._tgt_vocab_size, OPTS.corrupt, maskpred=OPTS.maskpred)
             noise_y = (noise_y.float() * y_mask).long()
             noise_mask = noise_mask * y_mask
         else:
@@ -155,6 +176,22 @@ class IndependentEnergyMT(Transformer):
             loss_mat = F.cross_entropy(logits.view(bsize * ylen, -1), y.flatten(), reduction="none").view(bsize, ylen)
         if OPTS.losstype == "single":
             loss = (loss_mat * y_mask).sum() / y_mask.sum()
+            zreg = ((OPTS.refined_z ** 2).sum(2) * y_mask).sum() / y_mask.sum()
+            score_map["zabs"] = torch.abs(OPTS.refined_z).mean()
+            if OPTS.zreg > 0.0001:
+                score_map["zreg"] = zreg
+                loss = loss + zreg * OPTS.zreg
+            if OPTS.mimic:
+                assert OPTS.modeltype == "forward"
+                with torch.no_grad():
+                    origin_z = OPTS.refined_z
+                    refined_y = logits.argmax(2)
+                    z, x_states = self.encode(x, x_mask, refined_y, y_mask)
+                    _, target_z = self.compute_energy(z, y_mask, x_states, x_mask)
+                mimic_grad = self.mimic_ebm(origin_z.detach(), y_mask, x_states, x_mask)
+                mimic_loss = self.euc_distance(mimic_grad, (target_z - origin_z).detach(), y_mask)
+                score_map["mimic"] = mimic_loss
+                loss = mimic_loss
         elif OPTS.losstype == "scorematch":
             noise_z, x_states = self.encode(x, x_mask, noise_y, y_mask)
             target_z, x_states = self.encode(x, x_mask, y, y_mask)
@@ -183,10 +220,10 @@ class IndependentEnergyMT(Transformer):
         else:
             raise NotImplementedError
         # loss = loss2
-        # yhat = logits.argmax(2)
-        # acc = ((yhat == y).float() * y_mask).sum() / y_mask.sum()
-        # noise_acc = ((yhat == y).float() * noise_mask).sum() / noise_mask.sum()
-        acc = noise_acc = loss * 0.
+        yhat = logits.argmax(2)
+        acc = ((yhat == y).float() * y_mask).sum() / y_mask.sum()
+        noise_acc = ((yhat == y).float() * noise_mask).sum() / noise_mask.sum()
+        # acc = noise_acc = loss * 0.
 
         score_map.update({"loss": loss, "acc": acc, "noise_acc": noise_acc})
         return score_map
@@ -196,6 +233,18 @@ class IndependentEnergyMT(Transformer):
         x_mask = self.to_float(torch.ne(x, 0))
         score_map = self.compute_loss(x, x_mask, y, y_mask)
         return score_map
+
+    def load(self, path):
+        state_dict = torch.load(path, map_location=lambda storage, loc: storage)
+        if "model_state" in state_dict:
+            state_dict = state_dict["model_state"]
+        state_keys = list(state_dict.keys())
+        for key in state_keys:
+            if key.startswith("module."):
+                new_key = key[7:]
+                state_dict[new_key] = state_dict[key]
+                del state_dict[key]
+        self.load_state_dict(state_dict, strict=False)
 
     def refine(self, z, mask=None, n_steps=50, step_size=0.001, return_tokens=False):
         if mask is not None:

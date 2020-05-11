@@ -83,6 +83,7 @@ ap.add_argument("--opt_heads", type=int, default=4)
 ap.add_argument("--opt_shard", type=int, default=32)
 ap.add_argument("--opt_longertrain", action="store_true")
 ap.add_argument("--opt_x3longertrain", action="store_true")
+ap.add_argument("--opt_x5longertrain", action="store_true")
 
 # Options for LANMT
 ap.add_argument("--opt_priorl", type=int, default=6, help="layers for each z encoder")
@@ -101,9 +102,11 @@ ap.add_argument("--opt_modeltype", default="realgrad", type=str)
 ap.add_argument("--opt_ebmtype", default="transformer", type=str)
 ap.add_argument("--opt_cosine", default="T", type=str)
 ap.add_argument("--opt_modelclass", default="", type=str)
+ap.add_argument("--opt_fin", default="delta", type=str)
 ap.add_argument("--opt_corrupt", action="store_true")
 ap.add_argument("--opt_decgrad", action="store_true", help="use decoder gradient as target of score matching")
 ap.add_argument("--opt_refine_from_mean", action="store_true")
+ap.add_argument("--opt_deltasteps", type=int, default=2)
 
 # Decoding options
 ap.add_argument("--opt_Twithout_ebm", action="store_true", help="without using EBM")
@@ -142,6 +145,10 @@ ap.add_argument("--model_path",
 ap.add_argument("--result_path",
                 default="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt.result")
 OPTS.parse(ap)
+
+if OPTS.hidden_size == 512:
+    envswitch.register("shu", "lanmt_path",
+                       os.path.join(DATA_ROOT, "lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt14_fair_ende_embedsz-512_hiddensz-512_longertrain.pt.log"))
 
 
 OPTS.model_path = OPTS.model_path.replace(DATA_ROOT, OPTS.root)
@@ -224,6 +231,8 @@ if OPTS.longertrain:
     training_maxsteps = int(training_maxsteps * 1.5)
 if OPTS.x3longertrain:
     training_maxsteps = int(training_maxsteps * 3)
+if OPTS.x5longertrain:
+    training_maxsteps = int(training_maxsteps * 5)
 
 if nmtlab.__version__ < "0.7.0":
     print("lanmt now requires nmtlab >= 0.7.0")
@@ -266,6 +275,7 @@ basic_options = dict(
 lanmt_options = basic_options.copy()
 lanmt_options.update(dict(
     prior_layers=OPTS.priorl, decoder_layers=OPTS.decoderl,
+    q_layers=OPTS.priorl,
     latent_dim=OPTS.latentdim,
     KL_budget=0. if OPTS.finetune else OPTS.klbudget,
     budget_annealing=OPTS.annealbudget,
@@ -292,6 +302,9 @@ if OPTS.scorenet:
     if OPTS.modelclass == "shunet6":
         from lib_score_matching6_shu import LatentScoreNetwork6
         ScoreNet = LatentScoreNetwork6
+    if OPTS.modelclass == "denoise6":
+        from lib_score_matching6_denoise import LatentScoreNetwork6
+        ScoreNet = LatentScoreNetwork6
 
 
     nmt = ScoreNet(
@@ -317,6 +330,7 @@ if OPTS.train or OPTS.all:
     elif OPTS.scorenet:
         n_valid_per_epoch = 10
         #scheduler = SimpleScheduler(max_epoch=5 if envswitch.who() == "shu" else 200)
+        training_maxsteps = 60000 if envswitch.who() == "shu" else training_maxsteps
         scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
     else:
         scheduler = TransformerScheduler(warm_steps=training_warmsteps, max_steps=training_maxsteps)
@@ -334,8 +348,8 @@ if OPTS.train or OPTS.all:
     trainer.configure(
         save_path=OPTS.model_path,
         n_valid_per_epoch=n_valid_per_epoch,
-        criteria="cosine_sim",
-        comp_fn=max,
+        criteria="cosine_sim" if OPTS.scorenet else "loss",
+        comp_fn=max if OPTS.scorenet else min,
         tensorboard_logdir=tb_logdir,
         clip_norm=0.1 if OPTS.clipnorm else 0
     )
@@ -403,7 +417,10 @@ if OPTS.test or OPTS.all:
             start_time = time.time()
             # with torch.no_grad() if not OPTS.scorenet else nullcontext():
                 # Predict latent and target words from prior
-            targets = scorenet.translate(x, n_iter=4)
+            if OPTS.scorenet:
+                targets = scorenet.translate(x, n_iter=OPTS.Trefine_steps)
+            else:
+                targets = nmt.translate(x, refine_steps=OPTS.Trefine_steps)
             target_tokens = targets.cpu().numpy()[0].tolist()
             if targets is None:
                 target_tokens = [2, 2, 2]

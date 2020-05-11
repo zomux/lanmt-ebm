@@ -72,7 +72,7 @@ class ScoreFn(nn.Module):
         super(ScoreFn, self).__init__()
         self.lat2hid = nn.Linear(
             D_lat, D_hid)
-        self.transformer = TransformerCrossEncoder(
+        self.transformer = ConvolutionalCrossEncoder(
             embed_layer=None, size=D_hid, n_layers=n_layers, dropout_ratio=dropout_ratio)
         self.hid2score = nn.Linear(
             D_hid, D_fin)
@@ -119,9 +119,9 @@ class LatentScoreNetwork6(Transformer):
         #  C : maximize cosine_sim(z_diff, score1, dims=[2])
         #      maximize cosine_sim(z_diff.norm(2), score2, dims=[1])
 
-        super(LatentScoreNetwork6, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         lanmt_model.train(False)
         self._lanmt = [lanmt_model]
+        super(LatentScoreNetwork6, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
         self.enable_valid_grad = True
         self.train()
 
@@ -140,6 +140,9 @@ class LatentScoreNetwork6(Transformer):
             self.cosine_loss = cosine_loss_tc
 
         self.magnitude_fn = EnergyFn(D_lat, D_hid, positive=True) # Learn z_diff.norm(1, 2)
+        self.expander_nn = nn.Linear(256, self.nmt()._tgt_vocab_size)
+        self.decoder = ConvolutionalEncoder(None, 256, n_layers=3)
+        self.lat2hid = nn.Linear(self._latent_size, 256)
 
     def delta_refine(self, z, y_mask, x_states, x_mask, n_iter=1):
         lanmt = self.nmt()
@@ -158,28 +161,19 @@ class LatentScoreNetwork6(Transformer):
     def energy_sgd(self, z, y_mask, x_states, x_mask, n_iter):
         # z : [bsz, y_length, lat_size]
         y_length = y_mask.sum(1).float()
-        if n_iter == 4:
-            lrs = [0.3] * 4
-        elif n_iter == 3:
-            lrs = [0.5] * 3
-        elif n_iter == 2:
-            lrs = [0.6] * 2
-        else:
-            lrs = [0.5] * n_iter
+        lrs = [1.0, 1.0, 1.0]
         for idx in range(n_iter):
-            z = z.detach().clone(   )
+            z = z.detach().clone()
             z.requires_grad = True
 
-            magnitude = self.magnitude_fn(z, y_mask, x_states, x_mask) # [bsz]
+            # magnitude = self.magnitude_fn(z, y_mask, x_states, x_mask) # [bsz]
 
             score = self.score_fn.score(z, y_mask, x_states, x_mask).detach()
-            score_norm = (score ** 2) * y_mask[:, :, None]
-            score_norm = score_norm.sum(2).sum(1).sqrt()
-            multiplier = magnitude * y_length.sqrt() / score_norm
-            print("iter=", idx, "mag=", float(magnitude.cpu().detach().numpy()[0]), "z_norm=", float(z.norm().cpu().detach().numpy())
-)
-            #multiplier = y_length.sqrt() / score_norm
-            score = score * multiplier[:, None, None] * lrs[idx]
+            # score_norm = (score ** 2) * y_mask[:, :, None]
+            # score_norm = score_norm.sum(2).sum(1).sqrt()
+            # multiplier = magnitude * y_length.sqrt() / score_norm
+            # multiplier = y_length.sqrt() / score_norm
+            # score = score * multiplier[:, None, None] * lrs[idx]
 
             z = z + score
         return z
@@ -217,14 +211,35 @@ class LatentScoreNetwork6(Transformer):
     def get_logits(self, z, y_mask, x_states, x_mask):
         lanmt = self.nmt()
         hid = lanmt.lat2hid(z)
-        decoder_states = lanmt.decoder(hid, y_mask, x_states, x_mask).detach()
+        decoder_states = lanmt.decoder(hid, y_mask, x_states, x_mask)
         logits = lanmt.expander_nn(decoder_states)
         return logits
+
+    def cosine_loss_tc(x1, x2, mask):
+        # Compute cosine loss over T and C dimension (ignoring PAD)
+        # input : [batch_size, targets_length, latent_size]
+        # output : [batch_size]
+        x1_norm = (x1 ** 2) * mask[:, :, None]
+        x1_norm = x1_norm.sum(2).sum(1).sqrt()
+        x2_norm = (x2 ** 2) * mask[:, :, None]
+        x2_norm = x2_norm.sum(2).sum(1).sqrt()
+        num = (x1 * x2) * mask[:, :, None]
+        num = num.sum(2).sum(1)
+        denom = x1_norm * x2_norm
+        sim = num / denom
+
+        return 1 - sim  # [bsz]
 
     def euc_distance(self, z1, z2, mask):
         distance = ((z2 - z1)**2).sum(2)
         distance = (distance * mask).sum(1) / mask.sum(1)
         return distance.mean()
+
+    def xent_loss(self, logits, y, y_mask):
+        bsize, ylen = y.shape
+        loss_mat = F.cross_entropy(logits.view(bsize * ylen, -1), y.flatten(), reduction="none").view(bsize, ylen)
+        loss = (loss_mat * y_mask).sum() / y_mask.sum()
+        return loss
 
     def compute_loss(self, x, x_mask, y, y_mask):
         lanmt = self.nmt()
@@ -232,73 +247,54 @@ class LatentScoreNetwork6(Transformer):
         x_states = lanmt.embed_layer(x)
         x_states = lanmt.x_encoder(x_states, x_mask)
         y_length = y_mask.sum(1).float()
-
-        p_prob = lanmt.compute_prior(y_mask, x_states, x_mask)
-        p_mean, p_stddev = p_prob[..., :latent_dim], F.softplus(p_prob[..., latent_dim:])
-        z_ini = p_mean
-        if self.training:
-            stddev = p_stddev * torch.randn_like(p_stddev)
-            if self.noise == "rand":
-                stddev = stddev * np.random.random_sample()
-            z_ini += stddev
-
+        assert OPTS.modeltype =="fakegrad"
+        # p_prob = lanmt.compute_prior(y_mask, x_states, x_mask)
+        # p_mean, p_stddev = p_prob[..., :latent_dim], F.softplus(p_prob[..., latent_dim:])
+        # z_ini = p_mean
+        # if self.training
+        #     stddev = p_stddev * torch.randn_like(p_stddev)
+        #     if self.noise == "rand":
+        #         stddev = stddev * np.random.random_sample()
+        #     z_ini += stddev
+        #
+        # with torch.no_grad():
+        #     z_delta = self.delta_refine(z_ini, y_mask, x_states, x_mask, n_iter=2)
+        #     if OPTS.fin == "y":
+        #         z_fin = self.nmt().compute_posterior(y, y_mask, x_states, x_mask)
+        #         z_fin = z_fin[:, :, :latent_dim]
+        #     else:
+        #         z_fin = z_delta
+        #
+        # z_ini = z_ini.detach().clone()
+        # z_ini.requires_grad = True
         with torch.no_grad():
-            z_delta = self.delta_refine(z_ini, y_mask, x_states, x_mask, n_iter=OPTS.deltasteps)
-            if OPTS.fin == "y":
-                z_fin = self.nmt().compute_posterior(y, y_mask, x_states, x_mask)
-                z_fin = z_fin[:, :, :latent_dim]
-            else:
-                z_fin = z_delta
-
-        z_ini = z_ini.detach().clone()
-        z_ini.requires_grad = True
-
-        z_diff = (z_fin - z_ini).detach() # [batch_size, targets_length, latent_size]
-        if OPTS.corrupt:
-            with torch.no_grad():
-                # logits = self.get_logits(z_fin, y_mask, x_states, x_mask)
-                # y_delta = logits.argmax(-1)
-                y_noise, _ = random_token_corruption(y, self._tgt_vocab_size, 0.2)
-                z_noise = self.nmt().compute_posterior(y_noise, y_mask, x_states, x_mask)
-                z_fin = self.nmt().compute_posterior(y, y_mask, x_states, x_mask)
-                z_fin = z_fin[:, :, :latent_dim]
-                stddev = z_noise[:, :, latent_dim:]
-                z_ini = z_noise[:, :, :latent_dim] + stddev * torch.randn_like(stddev)
-                z_diff = (z_fin - z_ini).detach()
-            z_ini.requires_grad_(True)
+            y_noise, _ = random_token_corruption(y, self._tgt_vocab_size, 0.2)
+            z_ini = self.nmt().compute_posterior(y_noise, y_mask, x_states, x_mask)
+            stddev = z_ini[:, :, latent_dim:]
+            z_ini = z_ini[:, :, :latent_dim] + stddev * torch.randn_like(stddev)
+        # z_diff = (z_fin - z_ini).detach() # [batch_size, targets_length, latent_size]
+        # with torch.no_grad():
+        #     # logits = self.get_logits(z_fin, y_mask, x_states, x_mask)
+        #     # y_delta = logits.argmax(-1)
+        #     y_noise, _ = random_token_corruption(y, self._tgt_vocab_size, 0.2)
+        #     z_noise = self.nmt().compute_posterior(y_noise, y_mask, x_states, x_mask)
+        #     z_fin = self.nmt().compute_posterior(y, y_mask, x_states, x_mask)
+        #     z_fin = z_fin[:, :, :latent_dim]
+        #     stddev = z_noise[:, :, latent_dim:]
+        #     z_ini = z_noise[:, :, :latent_dim] + stddev * torch.randn_like(stddev)
+        #     z_diff = (z_fin - z_ini).detach()
+        # z_ini.requires_grad_(True)
 
         score = self.score_fn.score(z_ini, y_mask, x_states, x_mask) # [batch_size, targets_length, latent_size]
-        loss_direction = self.cosine_loss(score, z_diff, y_mask) # [batch_size]
-        if self.cosine == "C":
-            z_diff_norm = z_diff.norm(2) # [batch_size, targets_length]
-            pred_norm_1d = self.score_fn2(z_ini, y_mask, x_states, x_mask)[:, :, 0] # [batch_size, targets_length]
-            loss_direction2 = cosine_loss_t(z_diff_norm, pred_norm_1d, y_mask)
+        updated_z = z_ini + score
+        h = self.lat2hid(updated_z)
+        h = self.decoder(h, y_mask)
+        logits = self.expander_nn(h)
+        loss = self.xent_loss(logits, y, y_mask)
+        y_pred = logits.argmax(2)
+        acc = ((y_pred == y).float() * y_mask).sum() / y_mask.sum()
 
-        magnitude = self.magnitude_fn(z_ini, y_mask, x_states, x_mask) # [bsz]
-        z_diff_norm = (z_diff ** 2) * y_mask[:, :, None]
-        z_diff_norm = z_diff_norm.sum(2).sum(1).sqrt() / y_length.sqrt() # euclidean norm normalized over length
-        loss_magnitude = (magnitude - z_diff_norm) ** 2
-
-        loss = loss_magnitude + loss_direction
-        if self.cosine == "C":
-            loss += loss_direction2
-        loss = loss.mean(0)
-        score_map = {"loss": loss}
-
-        if not self.training or self._mycnt % 50 == 0:
-            score_map["cosine_sim"] = 1 - loss_direction.mean()
-            score_map["loss_magnitude"] = loss_magnitude.mean()
-            score_map["loss_direction"] = loss_direction.mean()
-            score_map["z_diff_norm"] = z_diff_norm.mean()
-            score_map["magnitude"] = magnitude.mean()
-            updated_z = self.energy_sgd(z_delta, y_mask, x_states, x_mask, n_iter=1)
-            with torch.no_grad():
-                oracle_z = self.nmt().compute_posterior(y, y_mask, x_states, x_mask)
-                oracle_z = oracle_z[:, :, :latent_dim]
-            score_map["final_dist"] = self.euc_distance(updated_z, oracle_z, y_mask)
-            if self.cosine == "C":
-                score_map["cosine_sim2"] = 1 - loss_direction2.mean()
-                score_map["loss_direction2"] = loss_direction2.mean()
+        score_map = {"loss": loss, "acc": acc, "cosine_sim": -loss}
         return score_map
 
     def forward(self, x, y, sampling=False):
@@ -331,12 +327,15 @@ class LatentScoreNetwork6(Transformer):
         # Compute p(z|x)
         p_prob = lanmt.compute_prior(y_mask, x_states, x_mask)
         z = p_prob[..., :lanmt.latent_dim]
+        z = self.delta_refine(z, y_mask, x_states, x_mask)
         if OPTS.Twithout_ebm:
             z_ = z
         else:
             z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter)
 
-        logits = self.get_logits(z_, y_mask, x_states, x_mask)
+        h = self.lat2hid(z_)
+        h = self.decoder(h, y_mask)
+        logits = self.expander_nn(h)
         y_pred = logits.argmax(-1)
         y_pred = y_pred * y_mask.long()
         return y_pred
