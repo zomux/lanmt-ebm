@@ -30,7 +30,7 @@ class LatentScoreNetwork6(Transformer):
     def __init__(
         self, lanmt_model, hidden_size=256, latent_size=8,
         noise=1.0, train_sgd_steps=0, train_step_size=0.0, train_delta_steps=2,
-        losstype="", modeltype="realgrad", train_interpolate_ratio=0.0,
+        losstype="cosine", modeltype="realgrad", train_interpolate_ratio=0.0,
         ebm_useconv=False, direction_n_layers=4, magnitude_n_layers=4,
         enable_valid_grad=True):
         """
