@@ -78,7 +78,7 @@ def get_dataset_paths(data_root, dataset_tok):
     if dataset_tok == "wmt16_roen":
         train_src_corpus = "{}/train/train.sp.shuf.norm.ro".format(data_root)
         train_tgt_corpus = "{}/train/train.sp.shuf.en".format(data_root)
-        distilled_tgt_corpus = "{}/distill/distill.sp.en".format(data_root)
+        distilled_tgt_corpus = "{}/fairseq/distill.en".format(data_root)
         truncate_datapoints = None
 
         test_src_corpus = "{}/test/test.sp.norm.ro".format(data_root)
@@ -88,7 +88,7 @@ def get_dataset_paths(data_root, dataset_tok):
         src_vocab_path = "{}/spm/wmt16_enro_nmtlab.vocab".format(data_root)
         tgt_vocab_path = "{}/spm/wmt16_enro_nmtlab.vocab".format(data_root)
 
-        n_valid_per_epoch = 8
+        n_valid_per_epoch = 4
         training_warmsteps = 8000
         training_maxsteps = 1000000
         pretrained_autoregressive_path = "{}/wmt14_ende_teacher.pt".format(data_root)

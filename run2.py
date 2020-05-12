@@ -424,7 +424,7 @@ if OPTS.test or OPTS.all:
                 targets = scorenet.translate(x, n_iter=OPTS.Trefine_steps, step_size=1.0)
             else:
                 targets = nmt.translate(x, refine_steps=OPTS.Trefine_steps)
-            target_tokens = targets.cpu().numpy()[0].tolist()
+            target_tokens = targets[0].cpu()[0].numpy().tolist()
             if targets is None:
                 target_tokens = [2, 2, 2]
             # Record decoding time
