@@ -421,7 +421,7 @@ if OPTS.test or OPTS.all:
             # with torch.no_grad() if not OPTS.scorenet else nullcontext():
                 # Predict latent and target words from prior
             if OPTS.scorenet:
-                targets = scorenet.translate(x, n_iter=OPTS.Trefine_steps)
+                targets = scorenet.translate(x, n_iter=OPTS.Trefine_steps, step_size=1.0)
             else:
                 targets = nmt.translate(x, refine_steps=OPTS.Trefine_steps)
             target_tokens = targets.cpu().numpy()[0].tolist()
