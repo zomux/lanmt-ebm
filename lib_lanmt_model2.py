@@ -35,6 +35,7 @@ from lib_envswitch import envswitch
 class LANMTModel2(Transformer):
 
     def __init__(self,
+                 encoder_layers=5, 
                  prior_layers=3, decoder_layers=3,
                  q_layers=6,
                  latent_dim=8,
@@ -55,6 +56,7 @@ class LANMTModel2(Transformer):
             budget_annealing - whether anneal the KL budget
             max_train_steps - max training iterations
         """
+        self.encoder_layers = encoder_layers
         self.prior_layers = prior_layers
         self.decoder_layers = decoder_layers
         self.q_layers = q_layers
@@ -79,22 +81,22 @@ class LANMTModel2(Transformer):
         embed_layer = self.embed_layer
         self.pos_embed_layer = PositionalEmbedding(self.hidden_size)
         self.x_encoder = TransformerEncoder(
-          None, self.hidden_size, 5)
+          None, self.hidden_size, self.encoder_layers)
 
         # Prior p(z|x)
         self.prior_encoder = TransformerCrossEncoder(
-          None, self.hidden_size, 3)
+          None, self.hidden_size, self.prior_layers)
         self.p_hid2lat = nn.Linear(self.hidden_size, self.latent_dim * 2)
 
         # Approximate Posterior q(z|y,x)
         self.q_encoder_xy = TransformerCrossEncoder(
-          None, self.hidden_size, 3)
+          None, self.hidden_size, self.q_layers)
         self.q_hid2lat = nn.Linear(self.hidden_size, self.latent_dim * 2)
 
         # Decoder p(y|x,z)
         self.lat2hid = nn.Linear(self.latent_dim, self.hidden_size)
         self.decoder = TransformerCrossEncoder(
-          None, self.hidden_size, 3, skip_connect=True)
+          None, self.hidden_size, self.decoder_layers, skip_connect=True)
 
         # Length prediction
         #self.length_predictor = nn.Linear(self.hidden_size, 100)
@@ -114,12 +116,11 @@ class LANMTModel2(Transformer):
           def __call__(self, x):
             return x @ torch.transpose(embed_layer.weight, 0, 1) + final_bias
 
-        self.expander_nn = FinalLinear()
         if envswitch.who() == "shu":
             self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
-        # NOTE forced tying
-        # if True or self.tied:
-        #  self.expander_nn.weight = self.embed_layer.weight
+        else:
+            # NOTE forced tying
+            self.expander_nn = FinalLinear()
 
         self.label_smooth = LabelSmoothingKLDivLoss(0.1, self._tgt_vocab_size, 0)
         self.set_stepwise_training(False)
@@ -288,9 +289,10 @@ class LANMTModel2(Transformer):
         score_map, remain_loss = self.compute_final_loss(q_prob, p_prob, y_mask, score_map)
         # Report smoothed BLEU during validation
         if not torch.is_grad_enabled() and self.training_criteria == "BLEU":
+            decoder_outputs.unselect_batch()
             logits = self.expander_nn(decoder_outputs["final_states"])
             predictions = logits.argmax(-1)
-            score_map["BLEU"] = - self.get_BLEU(predictions, y)
+            score_map["BLEU"] = - self.get_BLEU((predictions * y_mask).long(), (y * y_mask).long())
 
         # --------------------------  Bacprop gradient --------------------#
         if self._shard_size is not None and self._shard_size > 0 and decoder_tensors is not None:
@@ -397,7 +399,9 @@ class LANMTModel2(Transformer):
             # y_lens = x_lens
             y_max_len = torch.max(y_lens.long()).item()
             batch_size = list(x_states.shape)[0]
-            y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len).cuda()
+            y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len)
+            if torch.cuda.is_available():
+                y_mask = y_mask.cuda()
             y_mask = (y_mask < y_lens[:, None]).float()
 
         # Compute p(z|x)
@@ -432,4 +436,4 @@ class LANMTModel2(Transformer):
             hyp = hyp[1:]
             ref = ref[1:]
             bleus.append(smoothed_bleu(hyp, ref))
-        return torch.tensor(np.mean(bleus) * 100.)
+        return torch.tensor(np.mean(bleus))

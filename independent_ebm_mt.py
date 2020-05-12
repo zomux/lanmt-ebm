@@ -54,6 +54,10 @@ ap.add_argument("--opt_heads", type=int, default=8)
 ap.add_argument("--opt_longertrain", action="store_true")
 ap.add_argument("--opt_x3longertrain", action="store_true")
 ap.add_argument("--opt_disentangle", action="store_true")
+ap.add_argument("--opt_mimic", action="store_true")
+ap.add_argument("--opt_mimic_cos", action="store_true")
+ap.add_argument("--opt_maskpred", action="store_true")
+ap.add_argument("--opt_zreg", type=float, default=0)
 
 # Options for LANMT
 ap.add_argument("--opt_latentdim", default=256, type=int, help="dimension of latent variables")
@@ -169,6 +173,10 @@ if OPTS.train or OPTS.all:
         # clip_norm=0.1 if OPTS.scorenet else 0
     )
     trains_stop_stdout_monitor()
+    if OPTS.mimic:
+        pretrained_path = OPTS.model_path.replace("_mimic", "")
+        assert os.path.exists(pretrained_path)
+        nmt.load(pretrained_path)
     if OPTS.resume:
         trainer.load(OPTS.model_path)
     trainer.run()
@@ -226,11 +234,17 @@ if OPTS.test or OPTS.all:
                     z = z.cuda()
                 latent = lanmt.latent2vector_nn(z)
                 targets, _, _ = lanmt.translate(x)
+                target_mask = torch.ne(targets, 0).float()
+                logits = nmt.compute_logits(x, mask, targets, target_mask)
+                targets = logits.argmax(2)
                 target_tokens = targets.cpu().numpy()[0].tolist()
             # EBM refinement
-            if not OPTS.Tbaseline:
+            if not OPTS.Tbaseline and i not in [203]:
+                with torch.no_grad():
+                    confidence = torch.log_softmax(logits, 2)[torch.arange(targets.shape[0]), torch.arange(targets.shape[1]), targets]
+                    replace_index = confidence.topk(int(targets.shape[1]*0.2), dim=1, largest=False).indices
+                    targets.scatter_(1, replace_index, 3)
                 target_mask = torch.ne(targets, 0).float()
-
                 logits = nmt.compute_logits(x, mask, targets, target_mask)
                 targets = logits.argmax(2)
                 target_tokens = targets.cpu().numpy()[0].tolist()

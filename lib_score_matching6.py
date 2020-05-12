@@ -30,7 +30,7 @@ class LatentScoreNetwork6(Transformer):
     def __init__(
         self, lanmt_model, hidden_size=256, latent_size=8,
         noise=1.0, train_sgd_steps=0, train_step_size=0.0, train_delta_steps=2,
-        losstype="", modeltype="realgrad", train_interpolate_ratio=0.0,
+        losstype="cosine", modeltype="realgrad", train_interpolate_ratio=0.0,
         ebm_useconv=False, direction_n_layers=4, magnitude_n_layers=4,
         enable_valid_grad=True):
         """
@@ -81,13 +81,13 @@ class LatentScoreNetwork6(Transformer):
             z.requires_grad = True
 
             score = self.score_fn.score(z, y_mask, x_states, x_mask, create_graph=True).detach()
-            #score = score * step_size
-            magnitude = self.magnitude_fn(z, y_mask, x_states, x_mask) # [bsz]
+            score = score * step_size
+            #magnitude = self.magnitude_fn(z, y_mask, x_states, x_mask) # [bsz]
             #print (magnitude.cpu().numpy().tolist())
-            score_norm = (score ** 2) * y_mask[:, :, None]
-            score_norm = score_norm.sum(2).sum(1).sqrt()
-            multiplier = magnitude * y_length.sqrt() / score_norm
-            score = score * multiplier[:, None, None] * step_size
+            #score_norm = (score ** 2) * y_mask[:, :, None]
+            #score_norm = score_norm.sum(2).sum(1).sqrt()
+            #multiplier = magnitude * y_length.sqrt() / score_norm
+            #score = score * multiplier[:, None, None] * step_size
 
             z = z + score
         return z
@@ -110,12 +110,11 @@ class LatentScoreNetwork6(Transformer):
         #    logqz = lanmt.compute_logqz(z, y_pred, y_mask, x_states, x_mask)
 
         #targets = logpy + logpz - logqz
+        # NOTE using only log(py) to do line search for now
         targets = (logpy * y_mask).sum(1) / y_mask.sum(1)
         return targets
 
     def energy_line_search2(self, z, y_mask, x_states, x_mask, p_prob, n_iter, c=0.05, tau=0.5):
-        # implementation from https://en.wikipedia.org/wiki/Backtracking_line_search
-        # hyperparameters : alpha, c, tau taken from the wiki page.
         # z : [bsz, y_length, lat_size]
         latent_dim = self.nmt().latent_dim
         targets_length = y_mask.shape[1]
@@ -125,7 +124,7 @@ class LatentScoreNetwork6(Transformer):
             #with torch.no_grad():
             #    targets_ini = self.compute_targets(z_ini, y_mask, x_states, x_mask, p_prob)
             z_ini.requires_grad = True
-            score = self.score_fn.score(z_ini, y_mask, x_states, x_mask, create_graph=False).detach()
+            score = self.score_fn.score(z_ini, y_mask, x_states, x_mask, create_graph=True).detach()
 
             with torch.no_grad():
                 #alphas = [0.1, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
@@ -154,7 +153,7 @@ class LatentScoreNetwork6(Transformer):
             with torch.no_grad():
                 targets_ini = self.compute_targets(z_ini, y_mask, x_states, x_mask, p_prob)
             z_ini.requires_grad = True
-            score = self.score_fn.score(z_ini, y_mask, x_states, x_mask, create_graph=False).detach()
+            score = self.score_fn.score(z_ini, y_mask, x_states, x_mask, create_graph=True).detach()
 
             with torch.no_grad():
                 alpha = 2.0
@@ -167,6 +166,11 @@ class LatentScoreNetwork6(Transformer):
                         break
                     alpha = alpha / 2.0
         return z
+
+    def euc_distance(self, z1, z2, mask):
+        distance = ((z2 - z1)**2).sum(2)
+        distance = (distance * mask).sum(1) / mask.sum(1)
+        return distance.mean()
 
     def compute_loss(self, x, x_mask, y, y_mask):
         lanmt = self.nmt()
@@ -187,11 +191,6 @@ class LatentScoreNetwork6(Transformer):
                     z_ini = self.energy_sgd(
                         z_ini, y_mask, x_states, x_mask,
                         n_iter=self.train_sgd_steps, step_size=self.train_step_size)
-            if self.train_interpolate_ratio > 0.0 and self._mycnt > 50000 and np.random.random_sample() < 0.5:
-                with torch.no_grad():
-                    z_fin = lanmt.delta_refine(
-                        z_ini, y_mask, x_states, x_mask, n_iter=self.train_delta_steps)
-                    z_ini = z_ini + (z_fin - z_ini) * np.random.random_sample() * self.train_interpolate_ratio
         with torch.no_grad():
             z_fin = lanmt.delta_refine(
                 z_ini, y_mask, x_states, x_mask, n_iter=self.train_delta_steps)
@@ -208,7 +207,8 @@ class LatentScoreNetwork6(Transformer):
                 z_noise = self.nmt().compute_posterior(y_noise, y_mask, x_states, x_mask)
                 z_fin = self.nmt().compute_posterior(y, y_mask, x_states, x_mask)
                 z_fin = z_fin[:, :, :latent_dim]
-                z_ini = z_noise[:, :, :latent_dim]
+                stddev = z_noise[:, :, latent_dim:]
+                z_ini = z_noise[:, :, :latent_dim] + stddev * torch.randn_like(stddev)
                 z_diff = (z_fin - z_ini).detach()
             z_ini.requires_grad_(True)
 
@@ -220,24 +220,28 @@ class LatentScoreNetwork6(Transformer):
         if self.losstype == "original":
             loss_direction = score_matching_loss(score, z_diff, y_mask)
 
-        magnitude = self.magnitude_fn(z_ini, y_mask, x_states, x_mask) # [bsz]
-        z_diff_norm = (z_diff ** 2) * y_mask[:, :, None]
-        z_diff_norm = z_diff_norm.sum(2).sum(1).sqrt() / y_length.sqrt() # euclidean norm normalized over length
-        loss_magnitude = (magnitude - z_diff_norm) ** 2
+        # NOTE commenting out magnitude part as we don't need it.
+        # might still want to keep self.magnitude_fn Module as IWSLT models are trained with them 
+        # (to avoid hassle with loading checkpoints)
+        # magnitude = self.magnitude_fn(z_ini, y_mask, x_states, x_mask) # [bsz]
+        # z_diff_norm = (z_diff ** 2) * y_mask[:, :, None]
+        # z_diff_norm = z_diff_norm.sum(2).sum(1).sqrt() / y_length.sqrt() # euclidean norm normalized over length
+        # loss_magnitude = (magnitude - z_diff_norm) ** 2
 
-        loss = loss_magnitude + loss_direction
+        #loss = loss_magnitude + loss_direction
+        loss = loss_direction
         loss = loss.mean(0)
         score_map = {"loss": loss}
 
         if not self.training or self._mycnt % 50 == 0:
             if self.losstype == "cosine":
-                score_map["cosine_sim"] = 1 - loss_direction.mean()
+                score_map["cosine_sim"] = 1 - loss
             if self.losstype == "original":
                 score_map["cosine_sim"] = 1 - cosine_loss_tc(score, z_diff, y_mask).mean()
-            score_map["loss_magnitude"] = loss_magnitude.mean()
-            score_map["loss_direction"] = loss_direction.mean()
-            score_map["z_diff_norm"] = z_diff_norm.mean()
-            score_map["magnitude"] = magnitude.mean()
+            #score_map["loss_magnitude"] = loss_magnitude.mean()
+            score_map["loss_direction"] = loss
+            #score_map["z_diff_norm"] = z_diff_norm.mean()
+            #score_map["magnitude"] = magnitude.mean()
         return score_map
 
     def forward(self, x, y, sampling=False):
@@ -247,7 +251,7 @@ class LatentScoreNetwork6(Transformer):
         self._mycnt += 1 # pretty hacky I know, sorry haha
         return score_map
 
-    def translate(self, x, n_iter, step_size, y_mask=None):
+    def translate(self, x, n_iter, step_size, y_mask=None, line_search=False):
         """ Testing codes.
         """
         lanmt = self.nmt()
@@ -275,8 +279,10 @@ class LatentScoreNetwork6(Transformer):
             z = z
         else:
             with torch.no_grad() if self.modeltype == "fakegrad" else suppress():
-                z = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, step_size=step_size)
-                #z = self.energy_line_search2(z, y_mask, x_states, x_mask, None, n_iter=n_iter)
+                if line_search:
+                    z = self.energy_line_search2(z, y_mask, x_states, x_mask, None, n_iter=n_iter)
+                else:
+                    z = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, step_size=step_size)
 
         with torch.no_grad():
             logits = lanmt.get_logits(z, y_mask, x_states, x_mask)

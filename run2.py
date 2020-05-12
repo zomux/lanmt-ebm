@@ -25,7 +25,7 @@ from nmtlab.evaluation import MosesBLEUEvaluator, SacreBLEUEvaluator
 from collections import defaultdict
 import numpy as np
 from argparse import ArgumentParser
-from contextlib import suppress
+#from contextlib import nullcontext
 
 from lib_lanmt_model2 import LANMTModel2
 from lib_rescoring import load_rescoring_transformer
@@ -53,11 +53,9 @@ envswitch.register(
 )
 envswitch.register(
     "jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
-    #"jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lvm/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_fastanneal_fixbug2_latentdim-2_lr-0.0003.pt"
 )
 envswitch.register(
-    "jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints_lanmt/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
-    #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints/lvm/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_fastanneal_fixbug2_latentdim-2_lr-0.0003.pt"
+    "jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoint_lanmt/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
 )
 
 ap = ArgumentParser()
@@ -93,26 +91,19 @@ ap.add_argument("--opt_decoderl", type=int, default=6, help="number of decoder l
 ap.add_argument("--opt_latentdim", default=8, type=int, help="dimension of latent variables")
 
 # Options for EBM
-ap.add_argument("--opt_ebm_lr", default=0.001, type=float)
-ap.add_argument("--opt_ebm_useconv", action="store_true")
-ap.add_argument("--opt_direction_n_layers", default=4, type=int)
-ap.add_argument("--opt_magnitude_n_layers", default=4, type=int)
+ap.add_argument("--opt_decoder", default="fixed", type=str)
 ap.add_argument("--opt_noise", default=1.0, type=float)
-ap.add_argument("--opt_train_sgd_steps", default=0, type=int)
-ap.add_argument("--opt_train_step_size", default=0.0, type=float)
-ap.add_argument("--opt_train_delta_steps", default=0, type=int)
-ap.add_argument("--opt_train_interpolate_ratio", default=0.0, type=float)
+ap.add_argument("--opt_targets", default="xent", type=str)
+ap.add_argument("--opt_imitation", action="store_true")
+ap.add_argument("--opt_imit_rand_steps", default=1, type=int)
+ap.add_argument("--opt_line_search_c", type=float, default=0.1)
 ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
-ap.add_argument("--opt_modeltype", default="whichgrad", type=str)
+ap.add_argument("--opt_modeltype", default="realgrad", type=str)
 ap.add_argument("--opt_ebmtype", default="transformer", type=str)
-ap.add_argument("--opt_losstype", default="cosine", type=str)
+ap.add_argument("--opt_cosine", default="T", type=str)
 ap.add_argument("--opt_modelclass", default="", type=str)
 ap.add_argument("--opt_fin", default="delta", type=str)
 ap.add_argument("--opt_corrupt", action="store_true")
-ap.add_argument("--opt_Tsgd_steps", default=1, type=int)
-ap.add_argument("--opt_Tstep_size", default=0.8, type=float, help="step size for EBM SGD")
-ap.add_argument("--opt_Treport_log_joint", action="store_true")
-ap.add_argument("--opt_Treport_elbo", action="store_true")
 ap.add_argument("--opt_decgrad", action="store_true", help="use decoder gradient as target of score matching")
 ap.add_argument("--opt_refine_from_mean", action="store_true")
 ap.add_argument("--opt_deltasteps", type=int, default=2)
@@ -150,14 +141,18 @@ ap.add_argument("--opt_disentangle", action="store_true")
 
 # Paths
 ap.add_argument("--model_path",
-                default="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/ebm.pt")
+                default="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt.pt")
 ap.add_argument("--result_path",
-                default="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/ebm.result")
+                default="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt.result")
 OPTS.parse(ap)
 
 if OPTS.hidden_size == 512:
-    envswitch.register("shu", "lanmt_path",
-                       os.path.join(DATA_ROOT, "lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt14_fair_ende_embedsz-512_hiddensz-512_longertrain.pt.log"))
+    envswitch.register(
+        "shu", "lanmt_path",
+        os.path.join(DATA_ROOT,
+            "lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt14_fair_ende_embedsz-512_fastanneal_hiddensz-512_latentdim-512_priorl-4_x5longertrain.pt"
+        )
+    )
 
 
 OPTS.model_path = OPTS.model_path.replace(DATA_ROOT, OPTS.root)
@@ -168,12 +163,10 @@ if envswitch.who() == "shu":
     OPTS.result_path = os.path.join(DATA_ROOT, os.path.basename(OPTS.result_path))
     OPTS.fixbug1 = True
     OPTS.fixbug2 = True
-else:
-    OPTS.model_path = os.path.join(HOME_DIR, "checkpoints", "ebm", OPTS.dtok, os.path.basename(OPTS.model_path))
-    OPTS.result_path = os.path.join(HOME_DIR, "checkpoints", "ebm", OPTS.dtok, os.path.basename(OPTS.result_path))
-    #OPTS.model_path = os.path.join(HOME_DIR, "checkpoints", "ebm", "{}_cassio".format(OPTS.dtok), os.path.basename(OPTS.model_path))
-    #OPTS.result_path = os.path.join(HOME_DIR, "checkpoints", "ebm", "{}_cassio".format(OPTS.dtok), os.path.basename(OPTS.result_path))
-    os.makedirs(os.path.dirname(OPTS.model_path), exist_ok=True)
+
+if envswitch.who() == "jason_prince":
+    OPTS.model_path = os.path.join(HOME_DIR, "checkpoints/lanmt.pt")
+    OPTS.result_path = os.path.join(HOME_DIR, "checkpoints/lanmt.result")
 
 # Determine the number of GPUs to use
 horovod_installed = importlib.util.find_spec("horovod") is not None
@@ -209,12 +202,13 @@ if is_root_node():
         except:
             pass
         if envswitch.who() != "shu":
-            tb_str = "{}_{}_lat{}_noise{}_lr{}".format(OPTS.modeltype, OPTS.losstype, OPTS.latentdim, OPTS.noise, OPTS.ebm_lr)
-            if OPTS.train_sgd_steps > 0:
-                tb_str += "_imit{}".format(OPTS.train_sgd_steps)
-            tb_logdir = os.path.join(HOME_DIR, "tensorboard", "ebm", OPTS.dtok, tb_str)
+            tb_str = "{}_{}_{}".format(OPTS.noise, OPTS.cosine, OPTS.modeltype)
+            if OPTS.imitation:
+                tb_str += "_imit{}".format(OPTS.imit_rand_steps)
+            tb_logdir = envswitch.load("home_dir") + "/tensorboard/{}".format(tb_str)
             for logdir in [tb_logdir+"_train", tb_logdir+"_dev"]:
-                os.makedirs(logdir, exist_ok=True)
+                if not os.path.exists(logdir):
+                    os.mkdir(logdir)
         else:
             tb_logdir = os.path.join(OPTS.root, "tensorboard")
             if not os.path.exists(tb_logdir):
@@ -259,8 +253,8 @@ else:
     tgt_corpus = train_tgt_corpus
 n_valid_samples = 5000 if OPTS.finetune else 200
 if OPTS.train:
-    #if envswitch.who() != "shu":
-    #    OPTS.batchtokens = 2048
+    if envswitch.who() != "shu":
+        OPTS.batchtokens = 2048
     dataset = MTDataset(
         src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
         src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
@@ -316,20 +310,18 @@ if OPTS.scorenet:
         from lib_score_matching6_denoise import LatentScoreNetwork6
         ScoreNet = LatentScoreNetwork6
 
+
     nmt = ScoreNet(
         nmt,
         hidden_size=OPTS.hiddensz,
         latent_size=OPTS.latentdim,
         noise=OPTS.noise,
-        train_sgd_steps=OPTS.train_sgd_steps,
-        train_step_size=OPTS.train_step_size,
-        train_delta_steps=OPTS.train_delta_steps,
-        losstype=OPTS.losstype,
-        modeltype=OPTS.modeltype,
-        train_interpolate_ratio=OPTS.train_interpolate_ratio,
-        ebm_useconv=OPTS.ebm_useconv,
-        direction_n_layers=OPTS.direction_n_layers,
-        magnitude_n_layers=OPTS.magnitude_n_layers,
+        # decoder=OPTS.decoder,
+        # imitation=OPTS.imitation,
+        # imit_rand_steps=OPTS.imit_rand_steps,
+        # cosine=OPTS.cosine,
+        # refine_from_mean=OPTS.refine_from_mean,
+        modeltype=OPTS.modeltype
     )
 
 # Training
@@ -348,7 +340,7 @@ if OPTS.train or OPTS.all:
     if OPTS.scorenet and False:
         optimizer = optim.SGD(nmt.parameters(), lr=0.001)
     else:
-        optimizer = optim.Adam(nmt.parameters(), lr=OPTS.ebm_lr, betas=(0.9, 0.98), eps=1e-9)
+        optimizer = optim.Adam(nmt.parameters(), lr=0.0003, betas=(0.9, 0.98), eps=1e-4)
     trainer = MTTrainer(
         nmt, dataset, optimizer,
         scheduler=scheduler, multigpu=gpu_num > 1,
@@ -394,7 +386,6 @@ if OPTS.test or OPTS.all:
         print("Cannot find model in {}".format(model_path))
         sys.exit()
     nmt.load(model_path)
-    print ("Successfully loaded EBM: {}".format(model_path))
     if torch.cuda.is_available():
         nmt.cuda()
     nmt.train(False)
@@ -427,13 +418,12 @@ if OPTS.test or OPTS.all:
             if torch.cuda.is_available():
                 x = x.cuda()
             start_time = time.time()
-
+            # with torch.no_grad() if not OPTS.scorenet else nullcontext():
+                # Predict latent and target words from prior
             if OPTS.scorenet:
-                with torch.no_grad() if OPTS.modeltype == "fakegrad" else suppress():
-                    targets, _, _ = scorenet.translate(x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size)
+                targets = scorenet.translate(x, n_iter=OPTS.Trefine_steps, step_size=1.0)
             else:
-                targets, _, _ = nmt.translate(x, refine_steps=OPTS.Tsgd_steps)
-
+                targets = nmt.translate(x, refine_steps=OPTS.Trefine_steps)
             target_tokens = targets.cpu().numpy()[0].tolist()
             if targets is None:
                 target_tokens = [2, 2, 2]
@@ -461,6 +451,9 @@ if OPTS.batch_test:
         print("--opt_Tlatent_search is not supported in batch test mode right now. Try to implement it.")
     # Load trained model
     model_path = OPTS.model_path
+    #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_modeltype-fakegrad_noise-rand_scorenet_tied.pt"
+    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_noise-rand_scorenet_tied.pt"
+    #model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints_all/checkpoints_0417/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_noise-rand_scorenet_tied.pt"
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
@@ -484,7 +477,6 @@ if OPTS.batch_test:
     sorted_line_ids = np.argsort([len(l.split()) for l in lines])
     start_time = time.time()
     output_tokens = []
-    elbos, logpyzs, logpys, logpzs, logqzs = [], [], [], [], []
     i = 0
     while i < len(lines):
         # Make a batch
@@ -507,52 +499,11 @@ if OPTS.batch_test:
         x = torch.tensor(x)
         if torch.cuda.is_available():
             x = x.cuda()
-
-        if OPTS.scorenet:
-            with torch.no_grad() if OPTS.modeltype == "fakegrad" else suppress():
-                targets, _, _ = scorenet.translate(x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size)
-        else:
-            targets, _, _ = nmt.translate(x, refine_steps=OPTS.Tsgd_steps)
-        if envswitch.who() != "shu" and OPTS.Treport_log_joint:
-            with torch.no_grad():
-                logpyz, logpy, logpz = nmt.compute_log_joint(x, z, targets, y_mask)
-                logpyz = logpyz.cpu().numpy().tolist()
-                logpy = logpy.cpu().numpy().tolist()
-                logpz = logpz.cpu().numpy().tolist()
-                logpyzs.extend(logpyz)
-                logpys.extend(logpy)
-                logpzs.extend(logpz)
-        if envswitch.who() != "shu" and OPTS.Treport_elbo:
-            with torch.no_grad():
-                elbo, logpy, logpz, logqz = nmt.compute_elbo(x, targets)
-                elbo = elbo.cpu().numpy().tolist()
-                logpy = logpy.cpu().numpy().tolist()
-                logpz = logpz.cpu().numpy().tolist()
-                logqz = logqz.cpu().numpy().tolist()
-                elbos.extend(elbo)
-                logpys.extend(logpy)
-                logpzs.extend(logpz)
-                logqzs.extend(logqz)
+        targets = scorenet.translate(x, n_iter=1) # NOTE
         target_tokens = targets.cpu().numpy().tolist()
         output_tokens.extend(target_tokens)
         sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
         sys.stdout.flush()
-    if envswitch.who() != "shu" and OPTS.Treport_log_joint:
-        elbo_file_path = os.path.join(HOME_DIR, "log_joint_file_{}".format(OPTS.modeltype))
-        elbo_file = open(elbo_file_path, "a")
-        elbo_file.write(
-            "{},{},{:.4f},{:.4f},{:.4f}\r\n".format(
-                OPTS.Tsgd_steps, OPTS.Tstep_size,
-                np.mean(logpys), np.mean(logpzs), np.mean(logpyzs)))
-        elbo_file.close()
-    if envswitch.who() != "shu" and OPTS.Treport_elbo:
-        elbo_file_path = os.path.join(HOME_DIR, "elbo_file_{}".format(OPTS.modeltype))
-        elbo_file = open(elbo_file_path, "a")
-        elbo_file.write(
-            "{},{},{:.4f},{:.4f},{:.4f},{:.4f}\r\n".format(
-                OPTS.Tsgd_steps, OPTS.Tstep_size,
-                np.mean(logpys), np.mean(logpzs), np.mean(logqzs), np.mean(elbos)))
-        elbo_file.close()
 
     with open(OPTS.result_path, "w") as outf:
         # Record decoding time
@@ -573,7 +524,7 @@ if OPTS.batch_test:
 if OPTS.evaluate or OPTS.all:
     # Post-processing
     if is_root_node():
-        hyp_path = "/tmp/{}_noise{}_lr{}.txt".format(OPTS.modeltype, OPTS.noise, OPTS.ebm_lr)
+        hyp_path = "/tmp/{}_{}_{}.txt".format(OPTS.noise, OPTS.targets, OPTS.cosine)
         result_path = OPTS.result_path
         with open(hyp_path, "w") as outf:
             for line in open(result_path):
@@ -610,10 +561,3 @@ if OPTS.evaluate or OPTS.all:
             from tensorboardX import SummaryWriter
             tb = SummaryWriter(log_dir=tb_logdir, comment="nmtlab")
             tb.add_scalar("BLEU", bleu)
-        if envswitch.who() != "shu" and False:
-            bleu_file_path = os.path.join(HOME_DIR, "bleu_file_{}".format(OPTS.modeltype))
-            bleu_file = open(bleu_file_path, "a")
-            bleu_file.write(
-                "{},{},{:.4f}\r\n".format(
-                    OPTS.Tsgd_steps, OPTS.Tstep_size, bleu))
-            bleu_file.close()
