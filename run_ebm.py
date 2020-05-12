@@ -52,12 +52,12 @@ envswitch.register(
     )
 )
 envswitch.register(
-    #"jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
-    "jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lvm/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_fastanneal_fixbug2_latentdim-2_lr-0.0003.pt"
+    "jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
+    #"jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lvm/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_fastanneal_fixbug2_latentdim-2_lr-0.0003.pt"
 )
 envswitch.register(
-    #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints_lanmt/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
-    "jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints/lvm/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_fastanneal_fixbug2_latentdim-2_lr-0.0003.pt"
+    "jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints_lanmt/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
+    #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints/lvm/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_fastanneal_fixbug2_latentdim-2_lr-0.0003.pt"
 )
 
 ap = ArgumentParser()
@@ -99,12 +99,12 @@ ap.add_argument("--opt_magnitude_n_layers", default=4, type=int)
 ap.add_argument("--opt_noise", default=1.0, type=float)
 ap.add_argument("--opt_train_sgd_steps", default=0, type=int)
 ap.add_argument("--opt_train_step_size", default=0.0, type=float)
-ap.add_argument("--opt_train_delta_steps", default=1, type=int)
+ap.add_argument("--opt_train_delta_steps", default=0, type=int)
 ap.add_argument("--opt_train_interpolate_ratio", default=0.0, type=float)
 ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
 ap.add_argument("--opt_modeltype", default="whichgrad", type=str)
 ap.add_argument("--opt_ebmtype", default="transformer", type=str)
-ap.add_argument("--opt_losstype", default="losstype", type=str)
+ap.add_argument("--opt_losstype", default="cosine", type=str)
 ap.add_argument("--opt_modelclass", default="", type=str)
 ap.add_argument("--opt_corrupt", action="store_true")
 ap.add_argument("--opt_Tsgd_steps", default=1, type=int)
@@ -163,6 +163,8 @@ if envswitch.who() == "shu":
 else:
     OPTS.model_path = os.path.join(HOME_DIR, "checkpoints", "ebm", OPTS.dtok, os.path.basename(OPTS.model_path))
     OPTS.result_path = os.path.join(HOME_DIR, "checkpoints", "ebm", OPTS.dtok, os.path.basename(OPTS.result_path))
+    #OPTS.model_path = os.path.join(HOME_DIR, "checkpoints", "ebm", "{}_cassio".format(OPTS.dtok), os.path.basename(OPTS.model_path))
+    #OPTS.result_path = os.path.join(HOME_DIR, "checkpoints", "ebm", "{}_cassio".format(OPTS.dtok), os.path.basename(OPTS.result_path))
     os.makedirs(os.path.dirname(OPTS.model_path), exist_ok=True)
 
 # Determine the number of GPUs to use
@@ -373,7 +375,6 @@ if OPTS.test or OPTS.all:
         assert os.path.exists(pretrained_autoregressive_path)
         load_rescoring_transformer(basic_options, pretrained_autoregressive_path)
     model_path = OPTS.model_path
-    model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lanmt_annealbudget_batchtokens-4092_cosine-TC_distill_modeltype-fakegrad_noise-rand_scorenet_tied.pt"
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
@@ -411,9 +412,11 @@ if OPTS.test or OPTS.all:
             if torch.cuda.is_available():
                 x = x.cuda()
             start_time = time.time()
-            # with torch.no_grad() if not OPTS.scorenet else nullcontext():
-                # Predict latent and target words from prior
-            targets = scorenet.translate(x, n_iter=1, step_size=OPTS.Tstep_size)
+            if not OPTS.Twithout_ebm:
+                with torch.no_grad() if OPTS.modeltype == "fakegrad" else suppress():
+                    targets, _, _ = scorenet.translate(x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size)
+            else:
+                targets, _, _ = nmt.translate(x, refine_steps=OPTS.Tsgd_steps)
             target_tokens = targets.cpu().numpy()[0].tolist()
             if targets is None:
                 target_tokens = [2, 2, 2]
@@ -487,9 +490,11 @@ if OPTS.batch_test:
         x = torch.tensor(x)
         if torch.cuda.is_available():
             x = x.cuda()
-        with torch.no_grad() if OPTS.modeltype == "fakegrad" else suppress():
-            targets, _, _ = scorenet.translate(x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size)
-            #targets, _, _ = nmt.translate(x, refine_steps=OPTS.Tsgd_steps)
+        if not OPTS.Twithout_ebm:
+            with torch.no_grad() if OPTS.modeltype == "fakegrad" else suppress():
+                targets, _, _ = scorenet.translate(x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size)
+        else:
+            targets, _, _ = nmt.translate(x, refine_steps=OPTS.Tsgd_steps)
         if envswitch.who() != "shu" and OPTS.Treport_log_joint:
             with torch.no_grad():
                 logpyz, logpy, logpz = nmt.compute_log_joint(x, z, targets, y_mask)
@@ -587,7 +592,7 @@ if OPTS.evaluate or OPTS.all:
             from tensorboardX import SummaryWriter
             tb = SummaryWriter(log_dir=tb_logdir, comment="nmtlab")
             tb.add_scalar("BLEU", bleu)
-        if envswitch.who() != "shu":
+        if envswitch.who() != "shu" and False:
             bleu_file_path = os.path.join(HOME_DIR, "bleu_file_{}".format(OPTS.modeltype))
             bleu_file = open(bleu_file_path, "a")
             bleu_file.write(

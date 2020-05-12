@@ -80,15 +80,69 @@ class LatentScoreNetwork6(Transformer):
             z = z.detach().clone()
             z.requires_grad = True
 
+            score = self.score_fn.score(z, y_mask, x_states, x_mask, create_graph=True).detach()
+            #score = score * step_size
             magnitude = self.magnitude_fn(z, y_mask, x_states, x_mask) # [bsz]
-
-            score = self.score_fn.score(z, y_mask, x_states, x_mask, create_graph=False).detach()
+            #print (magnitude.cpu().numpy().tolist())
             score_norm = (score ** 2) * y_mask[:, :, None]
             score_norm = score_norm.sum(2).sum(1).sqrt()
             multiplier = magnitude * y_length.sqrt() / score_norm
             score = score * multiplier[:, None, None] * step_size
 
             z = z + score
+        return z
+
+    def compute_targets(self, z, y_mask, x_states, x_mask, p_prob, y_pred=None):
+        lanmt = self.nmt()
+        latent_dim = lanmt.latent_dim
+        logpy, logpz, logqz = 0, 0, 0
+
+        logits = lanmt.get_logits(z, y_mask, x_states, x_mask)
+        if y_pred == None:
+            y_pred = logits.argmax(-1)
+            y_pred = y_pred * y_mask.long()
+        logpy = lanmt.compute_logpy(logits, y_pred, y_mask)
+
+        #if self.targets == "joint" or self.targets == "elbo":
+        #    logpz = lanmt.compute_logpz(z, y_mask, p_prob)
+
+        #if self.targets == "elbo":
+        #    logqz = lanmt.compute_logqz(z, y_pred, y_mask, x_states, x_mask)
+
+        #targets = logpy + logpz - logqz
+        targets = (logpy * y_mask).sum(1) / y_mask.sum(1)
+        return targets
+
+    def energy_line_search2(self, z, y_mask, x_states, x_mask, p_prob, n_iter, c=0.05, tau=0.5):
+        # implementation from https://en.wikipedia.org/wiki/Backtracking_line_search
+        # hyperparameters : alpha, c, tau taken from the wiki page.
+        # z : [bsz, y_length, lat_size]
+        latent_dim = self.nmt().latent_dim
+        targets_length = y_mask.shape[1]
+
+        for iter_idx in range(n_iter):
+            z_ini = z.detach().clone()
+            #with torch.no_grad():
+            #    targets_ini = self.compute_targets(z_ini, y_mask, x_states, x_mask, p_prob)
+            z_ini.requires_grad = True
+            score = self.score_fn.score(z_ini, y_mask, x_states, x_mask, create_graph=False).detach()
+
+            with torch.no_grad():
+                #alphas = [0.1, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
+                alphas = [0.1, 0.5, 1.0, 1.5]
+                targets = []
+                z_fins = []
+                for alpha in alphas:
+                    z_fin = z_ini + score * alpha # [batch_size, targets_length, latent_size]
+                    targets_fin = self.compute_targets(z_fin, y_mask, x_states, x_mask, p_prob) # [batch_size]
+                    targets.append(targets_fin)
+                    z_fins.append(z_fin)
+                targets = torch.stack(targets, dim=0) # [num_alphas, batch_size]
+                z_fins = torch.stack(z_fins, dim=0) # [num_alphas, batch_size, targets_length, latent_size]
+                _, idx = targets.max(dim=0, keepdim=True) # [1, batch_size]
+                idx_large = idx[:, :, None, None].repeat(1, 1, targets_length, latent_dim)
+                z = z_fins.gather(dim=0, index=idx_large)[0]
+                #print (alphas[idx], )
         return z
 
     def energy_line_search(self, z, y_mask, x_states, x_mask, p_prob, n_iter, c=0.05, tau=0.5):
@@ -98,22 +152,15 @@ class LatentScoreNetwork6(Transformer):
         for idx in range(n_iter):
             z_ini = z.detach().clone()
             with torch.no_grad():
-                targets_ini = self.compute_targets(
-                    z_ini, y_mask, x_states, x_mask, p_prob)
+                targets_ini = self.compute_targets(z_ini, y_mask, x_states, x_mask, p_prob)
             z_ini.requires_grad = True
-            energy = self.compute_energy(z_ini, y_mask, x_states, x_mask)
-            dummy = torch.ones_like(energy)
-            dummy.requires_grad = True
-
-            grad = autograd.grad(energy, z_ini, create_graph=False, grad_outputs=dummy)
-            score = grad[0].detach()
+            score = self.score_fn.score(z_ini, y_mask, x_states, x_mask, create_graph=False).detach()
 
             with torch.no_grad():
                 alpha = 2.0
                 while True:
                     z_fin = z_ini + score * alpha
-                    targets_fin = self.compute_targets(
-                        z_fin, y_mask, x_states, x_mask, p_prob)
+                    targets_fin = self.compute_targets(z_fin, y_mask, x_states, x_mask, p_prob)
                     diff = (targets_fin - targets_ini).mean().item()
                     if diff >= alpha * c or alpha <= 0.2:
                         z = z_fin
@@ -200,7 +247,7 @@ class LatentScoreNetwork6(Transformer):
         self._mycnt += 1 # pretty hacky I know, sorry haha
         return score_map
 
-    def translate(self, x, n_iter, step_size):
+    def translate(self, x, n_iter, step_size, y_mask=None):
         """ Testing codes.
         """
         lanmt = self.nmt()
@@ -209,32 +256,33 @@ class LatentScoreNetwork6(Transformer):
         x_states = lanmt.x_encoder(x_states, x_mask)
 
         # Predict length
-        x_lens = x_mask.sum(1)
-        delta = lanmt.predict_length(x_states, x_mask)
-        y_lens = delta.long() + x_lens.long()
-        # y_lens = x_lens
-        y_max_len = torch.max(y_lens.long()).item()
-        batch_size = list(x_states.shape)[0]
-        y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len).cuda()
-        y_mask = (y_mask < y_lens[:, None])
-        y_mask = y_mask.float()
-        # y_mask = x_mask
+        if y_mask is None:
+            x_lens = x_mask.sum(1)
+            delta = lanmt.predict_length(x_states, x_mask)
+            y_lens = delta.long() + x_lens.long()
+            # y_lens = x_lens
+            y_max_len = torch.max(y_lens.long()).item()
+            batch_size = list(x_states.shape)[0]
+            y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len).cuda()
+            y_mask = (y_mask < y_lens[:, None])
+            y_mask = y_mask.float()
 
         # Compute p(z|x)
         with torch.no_grad():
             p_prob = lanmt.compute_prior(y_mask, x_states, x_mask)
         z = p_prob[..., :lanmt.latent_dim]
         if OPTS.Twithout_ebm:
-            z_ = z
+            z = z
         else:
             with torch.no_grad() if self.modeltype == "fakegrad" else suppress():
-                z_ = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, step_size=step_size)
+                z = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, step_size=step_size)
+                #z = self.energy_line_search2(z, y_mask, x_states, x_mask, None, n_iter=n_iter)
 
         with torch.no_grad():
-            logits = lanmt.get_logits(z_, y_mask, x_states, x_mask)
+            logits = lanmt.get_logits(z, y_mask, x_states, x_mask)
         y_pred = logits.argmax(-1)
         y_pred = y_pred * y_mask.long()
-        return y_pred, z_, y_mask
+        return y_pred, z, y_mask
 
     def nmt(self):
         return self._lanmt[0]

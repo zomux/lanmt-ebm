@@ -382,7 +382,7 @@ class LANMTModel2(Transformer):
         logits = self.expander_nn(decoder_states)
         return logits
 
-    def translate(self, x, refine_steps=0):
+    def translate(self, x, refine_steps=0, y_mask=None):
         """ Testing codes.
         """
         x_mask = self.to_float(torch.ne(x, 0)).float()
@@ -390,15 +390,15 @@ class LANMTModel2(Transformer):
         x_states = self.x_encoder(x_states, x_mask)
 
         # Predict length
-        x_lens = x_mask.sum(1)
-        delta = self.predict_length(x_states, x_mask)
-        y_lens = delta.long() + x_lens.long()
-        # y_lens = x_lens
-        y_max_len = torch.max(y_lens.long()).item()
-        batch_size = list(x_states.shape)[0]
-        y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len).cuda()
-        y_mask = (y_mask < y_lens[:, None]).float()
-        # y_mask = x_mask
+        if y_mask is None:
+            x_lens = x_mask.sum(1)
+            delta = self.predict_length(x_states, x_mask)
+            y_lens = delta.long() + x_lens.long()
+            # y_lens = x_lens
+            y_max_len = torch.max(y_lens.long()).item()
+            batch_size = list(x_states.shape)[0]
+            y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len).cuda()
+            y_mask = (y_mask < y_lens[:, None]).float()
 
         # Compute p(z|x)
         pos_states = self.pos_embed_layer(y_mask[:, :, None]).expand(
