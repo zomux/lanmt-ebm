@@ -103,6 +103,7 @@ ap.add_argument("--opt_train_interpolate_ratio", default=0.0, type=float)
 ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
 ap.add_argument("--opt_modeltype", default="whichgrad", type=str)
 ap.add_argument("--opt_ebmtype", default="transformer", type=str)
+ap.add_argument("--opt_losstype", default="losstype", type=str)
 ap.add_argument("--opt_modelclass", default="", type=str)
 ap.add_argument("--opt_corrupt", action="store_true")
 ap.add_argument("--opt_Tsgd_steps", default=1, type=int)
@@ -201,7 +202,7 @@ if is_root_node():
             tb_str = "{}_lat{}_noise{}_lr{}".format(OPTS.modeltype, OPTS.latentdim, OPTS.noise, OPTS.ebm_lr)
             if OPTS.train_sgd_steps > 0:
                 tb_str += "_imit{}".format(OPTS.train_sgd_steps)
-            tb_logdir = os.path.join(HOME_DIR, "tensorboard", "ebm", OPTS.dtok, tb_str)
+            tb_logdir = os.path.join(HOME_DIR, "tensorboard", "ebm", "{}_cassio".format(OPTS.dtok), tb_str)
             for logdir in [tb_logdir+"_train", tb_logdir+"_dev"]:
                 os.makedirs(logdir, exist_ok=True)
         else:
@@ -308,6 +309,7 @@ if OPTS.scorenet:
         train_step_size=OPTS.train_step_size,
         train_delta_steps=OPTS.train_delta_steps,
         modeltype=OPTS.modeltype,
+        losstype=OPTS.losstype,
         train_interpolate_ratio=OPTS.train_interpolate_ratio,
         ebm_useconv=OPTS.ebm_useconv,
         direction_n_layers=OPTS.direction_n_layers,
@@ -316,10 +318,7 @@ if OPTS.scorenet:
 
 def postprocess(targets, tgt_vocab):
     target_tokens = targets.cpu().numpy()[0].tolist()
-    if targets is None:
-        target_tokens = [2, 2, 2]
-    # Convert token IDs back to words
-    target_tokens = [t for t in target_tokens if t > 2]
+    # target_tokens = [t for t in target_tokens if t > 2]
     target_words = tgt_vocab.decode(target_tokens)
     #target_sent = " ".join(target_words)
     return target_words
@@ -345,36 +344,45 @@ if OPTS.scorenet:
 src_vocab = Vocab(src_vocab_path)
 tgt_vocab = Vocab(tgt_vocab_path)
 
-lines = open("/scratch/yl1363/lanmt-ebm/analysis/test_sources").readlines()
+src_lines = open(test_src_corpus).readlines()
+trg_lines = open("/scratch/yl1363/corpora/iwslt/iwslt16_ende/test/test.sp.en").readlines()
 
-z_list, grad_list = [], []
-in_grid, out_grid = 10, 2
+in_grid, out_grid = 8, 16
 grid_size = in_grid + 2 * out_grid + 1
-for i, line in enumerate(lines):
-    # Make a batch
-    tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
-    x = torch.tensor([tokens])
+all_dict = {}
+for idx, (src_line, trg_line) in enumerate(zip(src_lines, trg_lines)):
+    ylen = len(trg_line.strip().split())
+    #if not (ylen <= 8):
+    if not (8 <= ylen and ylen <= 12):
+        continue
+    src_tokens = src_vocab.encode("<s> {} </s>".format(src_line.strip()).split())
+    trg_tokens = tgt_vocab.encode("<s> {} </s>".format(trg_line.strip()).split())
+    x = torch.tensor([src_tokens])
+    y = torch.tensor([trg_tokens])
     if torch.cuda.is_available():
         x = x.cuda()
-    x_mask = nmt.to_float(torch.ne(x, 0))
+    x_mask = nmt.to_float(torch.ne(x, 0)).cuda()
+    y_mask = nmt.to_float(torch.ne(y, 0)).cuda()
+    y_length = y_mask.size(1)
     x_states = nmt.embed_layer(x)
     x_states = nmt.x_encoder(x_states, x_mask)
     with torch.no_grad() if OPTS.modeltype == "fakegrad" else suppress():
-        y0, z0, y_mask = nmt.translate(x, refine_steps=0)
-        y_length = y_mask.size(1)
-        y1, z1, _ = nmt.translate(x, refine_steps=1)
-        y2, z2, _ = nmt.translate(x, refine_steps=2)
-        y3, z3, _ = nmt.translate(x, refine_steps=3)
-        y4, z4, _ = nmt.translate(x, refine_steps=4)
-        z_list.extend([z0, z1, z2, z3, z4])
-        all_zs = torch.cat(z_list, dim=0)
-        #targets, _, _ = scorenet.translate(x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size)
+        y0, z0, _ = nmt.translate(x, refine_steps=0, y_mask=y_mask)
+        y1, z1, _ = nmt.translate(x, refine_steps=1, y_mask=y_mask)
+        y2, z2, _ = nmt.translate(x, refine_steps=2, y_mask=y_mask)
+        y3, z3, _ = nmt.translate(x, refine_steps=3, y_mask=y_mask)
+        y4, z4, _ = nmt.translate(x, refine_steps=4, y_mask=y_mask)
+        y_sgd, _, _ = scorenet.translate(x, n_iter=4, step_size=0.4, y_mask=y_mask)
         z_diff = (z4 - z0)[0] # [len, 2]
         z_diff_x = z_diff[:, 0] # [len]
         z_diff_y = z_diff[:, 1] # [len]
-        grid = torch.linspace(-out_grid, in_grid+out_grid, in_grid+out_grid*2+1).cuda() / 10.0 # [grid_size]
+        grid = torch.linspace(
+            -out_grid,
+            in_grid + out_grid,
+            in_grid + out_grid*2 + 1).cuda() / float(in_grid) # [grid_size]
         y_mask_3d = y_mask.repeat(grid_size, 1)
         z0_3d = z0.repeat(grid_size, 1, 1)
+        grad_list = []
         for y_grid_idx in range(grid_size):
             x_grid = grid[:, None, None] * z_diff_x[None, :, None] # [grid_size, len, 1]
             y_grid = grid[y_grid_idx] * z_diff_y # [len]
@@ -383,10 +391,19 @@ for i, line in enumerate(lines):
             score = scorenet.score_fn.score(z_grid + z0_3d, y_mask_3d, x_states, x_mask) # [grid_size, len, 2]
             grad_list.append(score)
         all_grads = torch.stack(grad_list, dim=1)
-        import ipdb; ipdb.set_trace()
-        ff = open("/scratch/yl1363/lanmt-ebm/analysis/all_grads.npy", "wb")
-        np.save(ff, all_grads.cpu().numpy())
-        ff = open("/scratch/yl1363/lanmt-ebm/analysis/all_zs.npy", "wb")
-        np.save(ff, all_zs.cpu().numpy())
-        import ipdb; ipdb.set_trace()
-        print(1
+    all_dict[idx] = {
+        "src_line": src_line,
+        "trg_line": trg_line,
+        "delta_zs": [z.cpu().numpy() for z in [z0, z1, z2, z3, z4]],
+        "delta_ys": [postprocess(y, tgt_vocab) for y in [y0, y1, y2, y3, y4]],
+        "sgd_y": postprocess(y_sgd, tgt_vocab),
+        "all_grads": all_grads.cpu().numpy(),
+    }
+    print (idx)
+
+import ipdb; ipdb.set_trace()
+ff = open("/scratch/yl1363/lanmt-ebm/analysis/data_8p_8_16.pkl", "wb")
+import pickle as pkl
+pkl.dump(all_dict, ff)
+print(1)
+
