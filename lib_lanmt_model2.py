@@ -119,8 +119,9 @@ class LANMTModel2(Transformer):
         if envswitch.who() == "shu":
             self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
         else:
-            # NOTE forced tying
-            self.expander_nn = FinalLinear()
+            # NOTE : FinalLinear for IWSLT, otherwise nn.Linear
+            #self.expander_nn = FinalLinear()
+            self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
 
         self.label_smooth = LabelSmoothingKLDivLoss(0.1, self._tgt_vocab_size, 0)
         self.set_stepwise_training(False)
@@ -366,6 +367,19 @@ class LANMTModel2(Transformer):
         logqz_ = sum(logqz_list) / 20.0
         elbo = logpy_ + logpz_ - logqz_
         return elbo, logpy_, logpz_, logqz_
+
+    def delta_refine_batch(self, z, y_mask, x_states, x_mask, n_iter=1):
+        z_list = []
+        for idx in range(n_iter):
+            logits = self.get_logits(z, y_mask, x_states, x_mask)
+            y_pred = logits.argmax(-1)
+            y_pred = y_pred * y_mask.long()
+            y_states = self.embed_layer(y_pred)
+            q_states = self.q_encoder_xy(y_states, y_mask, x_states, x_mask)
+            q_prob = self.q_hid2lat(q_states)
+            z = q_prob[..., :self.latent_dim]
+            z_list.append(z)
+        return z_list
 
     def delta_refine(self, z, y_mask, x_states, x_mask, n_iter=1):
         for idx in range(n_iter):

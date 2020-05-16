@@ -13,6 +13,7 @@ import time
 import importlib
 import torch
 from torch import optim
+import torch.nn.functional as F
 sys.path.append(".")
 
 import nmtlab
@@ -86,8 +87,8 @@ ap.add_argument("--opt_longertrain", action="store_true")
 ap.add_argument("--opt_x3longertrain", action="store_true")
 
 # Options for LANMT
-ap.add_argument("--opt_priorl", type=int, default=6, help="layers for each z encoder")
-ap.add_argument("--opt_decoderl", type=int, default=6, help="number of decoder layers")
+ap.add_argument("--opt_priorl", type=int, default=3, help="layers for each z encoder")
+ap.add_argument("--opt_decoderl", type=int, default=3, help="number of decoder layers")
 ap.add_argument("--opt_latentdim", default=8, type=int, help="dimension of latent variables")
 
 # Options for EBM
@@ -272,7 +273,10 @@ basic_options = dict(
 
 lanmt_options = basic_options.copy()
 lanmt_options.update(dict(
-    prior_layers=OPTS.priorl, decoder_layers=OPTS.decoderl,
+    encoder_layers=5,
+    prior_layers=OPTS.priorl,
+    q_layers=OPTS.priorl,
+    decoder_layers=OPTS.decoderl,
     latent_dim=OPTS.latentdim,
     KL_budget=0. if OPTS.finetune else OPTS.klbudget,
     budget_annealing=OPTS.annealbudget,
@@ -347,12 +351,12 @@ tgt_vocab = Vocab(tgt_vocab_path)
 src_lines = open(test_src_corpus).readlines()
 trg_lines = open("/scratch/yl1363/corpora/iwslt/iwslt16_ende/test/test.sp.en").readlines()
 
-in_grid, out_grid = 8, 16
+in_grid, out_grid = 16, 4
 grid_size = in_grid + 2 * out_grid + 1
 all_dict = {}
 for idx, (src_line, trg_line) in enumerate(zip(src_lines, trg_lines)):
     ylen = len(trg_line.strip().split())
-    #if not (ylen <= 8):
+    #if 8 <= ylen:
     if not (8 <= ylen and ylen <= 12):
         continue
     src_tokens = src_vocab.encode("<s> {} </s>".format(src_line.strip()).split())
@@ -367,42 +371,65 @@ for idx, (src_line, trg_line) in enumerate(zip(src_lines, trg_lines)):
     x_states = nmt.embed_layer(x)
     x_states = nmt.x_encoder(x_states, x_mask)
     with torch.no_grad() if OPTS.modeltype == "fakegrad" else suppress():
-        y0, z0, _ = nmt.translate(x, refine_steps=0, y_mask=y_mask)
-        y1, z1, _ = nmt.translate(x, refine_steps=1, y_mask=y_mask)
-        y2, z2, _ = nmt.translate(x, refine_steps=2, y_mask=y_mask)
-        y3, z3, _ = nmt.translate(x, refine_steps=3, y_mask=y_mask)
-        y4, z4, _ = nmt.translate(x, refine_steps=4, y_mask=y_mask)
-        y_sgd, _, _ = scorenet.translate(x, n_iter=4, step_size=0.4, y_mask=y_mask)
-        z_diff = (z4 - z0)[0] # [len, 2]
-        z_diff_x = z_diff[:, 0] # [len]
-        z_diff_y = z_diff[:, 1] # [len]
+        y0, z0, _, p_prob = nmt.translate(x, refine_steps=0, y_mask=y_mask)
+        z_delta_list = nmt.delta_refine_batch(z0, y_mask, x_states, x_mask, n_iter=4)
+        logits = nmt.get_logits(z_delta_list[-1], y_mask, x_states, x_mask)
+        y_delta4 = logits.argmax(-1) * y_mask.long()
+
+        z_sgd_list, z_score_list = scorenet.energy_sgd_batch(z0, y_mask, x_states, x_mask, n_iter=4, step_size=0.4)
+        logits = nmt.get_logits(z_sgd_list[-1], y_mask, x_states, x_mask)
+        y_sgd4 = logits.argmax(-1) * y_mask.long()
+
+        z_all = torch.cat([z0]+z_delta_list+z_sgd_list, dim=0)
+        z_max, _ = torch.max(z_all, dim=0) # [targets_length, 2]
+        z_min, _ = torch.min(z_all, dim=0) # [targets_length, 2]
+        z_diff = z_max - z_min
+
+        z_diff_x, z_diff_y = z_diff[:, 0], z_diff[:, 1] # [targets_length]
+
         grid = torch.linspace(
             -out_grid,
             in_grid + out_grid,
-            in_grid + out_grid*2 + 1).cuda() / float(in_grid) # [grid_size]
-        y_mask_3d = y_mask.repeat(grid_size, 1)
-        z0_3d = z0.repeat(grid_size, 1, 1)
+            grid_size).cuda() / float(in_grid) # [grid_size]
+        y_mask_3d = y_mask.repeat(grid_size, 1) # [grid_size, targets_length]
+        z_min_3d = z_min[None, :, :].repeat(grid_size, 1, 1) # [grid_size, targets_length, 2]
         grad_list = []
+        z_grids = []
+        x_states_3d = x_states.repeat(grid_size, 1, 1)
+        x_mask_3d = x_mask.repeat(grid_size, 1)
         for y_grid_idx in range(grid_size):
             x_grid = grid[:, None, None] * z_diff_x[None, :, None] # [grid_size, len, 1]
             y_grid = grid[y_grid_idx] * z_diff_y # [len]
             y_grid = y_grid[None, :, None].repeat(grid_size, 1, 1) # [grid_size, len, 1]
             z_grid = torch.cat([x_grid, y_grid], dim=2) # [grid_size, len, 2]
-            score = scorenet.score_fn.score(z_grid + z0_3d, y_mask_3d, x_states, x_mask) # [grid_size, len, 2]
+            z_grid_actual = z_grid + z_min_3d
+            score = scorenet.score_fn.score(z_grid_actual, y_mask_3d, x_states_3d, x_mask_3d) # [grid_size, len, 2]
+            #import ipdb; ipdb.set_trace()
+            #score = score * 0.4
             grad_list.append(score)
+            z_grids.append(z_grid_actual)
         all_grads = torch.stack(grad_list, dim=1)
+        z_grids = torch.stack(z_grids, dim=1)
     all_dict[idx] = {
         "src_line": src_line,
         "trg_line": trg_line,
-        "delta_zs": [z.cpu().numpy() for z in [z0, z1, z2, z3, z4]],
-        "delta_ys": [postprocess(y, tgt_vocab) for y in [y0, y1, y2, y3, y4]],
-        "sgd_y": postprocess(y_sgd, tgt_vocab),
+        "y_mean": postprocess(y0, tgt_vocab),
+        "y_delta4": postprocess(y_delta4, tgt_vocab),
+        "y_sgd4": postprocess(y_sgd4, tgt_vocab),
+
+        "z0" : z0.cpu().numpy(),
+        "z_sgd_list": [z.cpu().numpy() for z in z_sgd_list],
+        "z_score_list": [z.cpu().numpy() for z in z_score_list],
+        "z_delta_list": [z.cpu().numpy() for z in z_delta_list],
+
+        "z_grids": z_grids.cpu().numpy(),
         "all_grads": all_grads.cpu().numpy(),
     }
     print (idx)
 
 import ipdb; ipdb.set_trace()
-ff = open("/scratch/yl1363/lanmt-ebm/analysis/data_8p_8_16.pkl", "wb")
+#ff = open("/scratch/yl1363/lanmt-ebm/analysis/data_8u_{}_{}.pkl".format(in_grid, out_grid), "wb")
+ff = open("/scratch/yl1363/lanmt-ebm/analysis/data_8to12_{}_{}.pkl".format(in_grid, out_grid), "wb")
 import pickle as pkl
 pkl.dump(all_dict, ff)
 print(1)

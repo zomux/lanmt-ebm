@@ -162,8 +162,7 @@ if is_root_node():
         except:
             pass
         if envswitch.who() != "shu":
-            tb_str = "lat{}_lr{}".format(OPTS.latentdim, OPTS.lr)
-            tb_logdir = os.path.join(HOME_DIR, "tensorboard", "lvm", OPTS.dtok, tb_str)
+            tb_logdir = os.path.join(HOME_DIR, "tensorboard", "lvm", OPTS.dtok, OPTS.model_tag)
             for logdir in [tb_logdir+"_train", tb_logdir+"_dev"]:
                 os.makedirs(logdir, exist_ok=True)
         else:

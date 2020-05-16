@@ -30,7 +30,7 @@ class LatentScoreNetwork6(Transformer):
     def __init__(
         self, lanmt_model, hidden_size=256, latent_size=8,
         noise=1.0, train_sgd_steps=0, train_step_size=0.0, train_delta_steps=2,
-        losstype="cosine", modeltype="realgrad", train_interpolate_ratio=0.0,
+        modeltype="realgrad",
         ebm_useconv=False, direction_n_layers=4, magnitude_n_layers=4,
         enable_valid_grad=True):
         """
@@ -46,13 +46,10 @@ class LatentScoreNetwork6(Transformer):
         self.train_sgd_steps = train_sgd_steps
         self.train_step_size = train_step_size
         self.train_delta_steps = train_delta_steps
-        self.losstype = losstype
         self.modeltype = modeltype
-        self.train_interpolate_ratio = train_interpolate_ratio
         self.ebm_useconv = ebm_useconv
         self.direction_n_layers = direction_n_layers
         self.magnitude_n_layers = magnitude_n_layers
-        assert self.losstype in ["cosine", "original"]
         assert self.modeltype in ["realgrad", "fakegrad"]
 
         super(LatentScoreNetwork6, self).__init__(src_vocab_size=1, tgt_vocab_size=1)
@@ -64,6 +61,7 @@ class LatentScoreNetwork6(Transformer):
     def prepare(self):
         D_lat, D_hid = self._latent_size, self._hidden_size
         energy_cls = ConvNetEnergyFn if self.ebm_useconv else EnergyFn
+        # only keeping for backwards compatibility for EBM models trained with magnitude (e.g. IWSLT)
         self.magnitude_fn = energy_cls(
             D_lat, D_hid, n_layers=self.magnitude_n_layers, positive=True) # Learn z_diff.norm(1, 2)
         if self.modeltype == "realgrad": # Learn the energy function
@@ -72,6 +70,22 @@ class LatentScoreNetwork6(Transformer):
         elif self.modeltype == "fakegrad": # Directly learn the gradient of the energy
             self.score_fn = ScoreFn(
                 D_lat, D_hid, D_lat, n_layers=self.direction_n_layers, positive=False)
+
+    def energy_sgd_batch(self, z, y_mask, x_states, x_mask, n_iter, step_size):
+        # z : [bsz, y_length, lat_size]
+        y_length = y_mask.sum(1).float()
+        z_list, score_list = [], []
+        for idx in range(n_iter):
+            z = z.detach().clone()
+            z.requires_grad = True
+
+            score = self.score_fn.score(z, y_mask, x_states, x_mask, create_graph=True).detach()
+            score = score * step_size
+            score_list.append(score)
+
+            z = z + score
+            z_list.append(z)
+        return z_list, score_list
 
     def energy_sgd(self, z, y_mask, x_states, x_mask, n_iter, step_size):
         # z : [bsz, y_length, lat_size]
@@ -82,12 +96,6 @@ class LatentScoreNetwork6(Transformer):
 
             score = self.score_fn.score(z, y_mask, x_states, x_mask, create_graph=True).detach()
             score = score * step_size
-            #magnitude = self.magnitude_fn(z, y_mask, x_states, x_mask) # [bsz]
-            #print (magnitude.cpu().numpy().tolist())
-            #score_norm = (score ** 2) * y_mask[:, :, None]
-            #score_norm = score_norm.sum(2).sum(1).sqrt()
-            #multiplier = magnitude * y_length.sqrt() / score_norm
-            #score = score * multiplier[:, None, None] * step_size
 
             z = z + score
         return z
@@ -114,7 +122,7 @@ class LatentScoreNetwork6(Transformer):
         targets = (logpy * y_mask).sum(1) / y_mask.sum(1)
         return targets
 
-    def energy_line_search2(self, z, y_mask, x_states, x_mask, p_prob, n_iter, c=0.05, tau=0.5):
+    def energy_line_search(self, z, y_mask, x_states, x_mask, p_prob, n_iter):
         # z : [bsz, y_length, lat_size]
         latent_dim = self.nmt().latent_dim
         targets_length = y_mask.shape[1]
@@ -128,7 +136,7 @@ class LatentScoreNetwork6(Transformer):
 
             with torch.no_grad():
                 #alphas = [0.1, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
-                alphas = [0.1, 0.5, 1.0, 1.5]
+                alphas = [0.5, 1.0, 1.5]
                 targets = []
                 z_fins = []
                 for alpha in alphas:
@@ -142,29 +150,6 @@ class LatentScoreNetwork6(Transformer):
                 idx_large = idx[:, :, None, None].repeat(1, 1, targets_length, latent_dim)
                 z = z_fins.gather(dim=0, index=idx_large)[0]
                 #print (alphas[idx], )
-        return z
-
-    def energy_line_search(self, z, y_mask, x_states, x_mask, p_prob, n_iter, c=0.05, tau=0.5):
-        # implementation from https://en.wikipedia.org/wiki/Backtracking_line_search
-        # hyperparameters : alpha, c, tau taken from the wiki page.
-        # z : [bsz, y_length, lat_size]
-        for idx in range(n_iter):
-            z_ini = z.detach().clone()
-            with torch.no_grad():
-                targets_ini = self.compute_targets(z_ini, y_mask, x_states, x_mask, p_prob)
-            z_ini.requires_grad = True
-            score = self.score_fn.score(z_ini, y_mask, x_states, x_mask, create_graph=True).detach()
-
-            with torch.no_grad():
-                alpha = 2.0
-                while True:
-                    z_fin = z_ini + score * alpha
-                    targets_fin = self.compute_targets(z_fin, y_mask, x_states, x_mask, p_prob)
-                    diff = (targets_fin - targets_ini).mean().item()
-                    if diff >= alpha * c or alpha <= 0.2:
-                        z = z_fin
-                        break
-                    alpha = alpha / 2.0
         return z
 
     def euc_distance(self, z1, z2, mask):
@@ -215,33 +200,14 @@ class LatentScoreNetwork6(Transformer):
         # [batch_size, targets_length, latent_size]
         score = self.score_fn.score(z_ini, y_mask, x_states, x_mask)
         # [batch_size]
-        if self.losstype == "cosine":
-            loss_direction = cosine_loss_tc(score, z_diff, y_mask)
-        if self.losstype == "original":
-            loss_direction = score_matching_loss(score, z_diff, y_mask)
+        loss_direction = score_matching_loss(score, z_diff, y_mask)
 
-        # NOTE commenting out magnitude part as we don't need it.
-        # might still want to keep self.magnitude_fn Module as IWSLT models are trained with them 
-        # (to avoid hassle with loading checkpoints)
-        # magnitude = self.magnitude_fn(z_ini, y_mask, x_states, x_mask) # [bsz]
-        # z_diff_norm = (z_diff ** 2) * y_mask[:, :, None]
-        # z_diff_norm = z_diff_norm.sum(2).sum(1).sqrt() / y_length.sqrt() # euclidean norm normalized over length
-        # loss_magnitude = (magnitude - z_diff_norm) ** 2
-
-        #loss = loss_magnitude + loss_direction
         loss = loss_direction
         loss = loss.mean(0)
         score_map = {"loss": loss}
 
-        if not self.training or self._mycnt % 50 == 0:
-            if self.losstype == "cosine":
-                score_map["cosine_sim"] = 1 - loss
-            if self.losstype == "original":
-                score_map["cosine_sim"] = 1 - cosine_loss_tc(score, z_diff, y_mask).mean()
-            #score_map["loss_magnitude"] = loss_magnitude.mean()
-            score_map["loss_direction"] = loss
-            #score_map["z_diff_norm"] = z_diff_norm.mean()
-            #score_map["magnitude"] = magnitude.mean()
+        if not self.training:
+            score_map["cosine_sim"] = 1 - cosine_loss_tc(score, z_diff, y_mask).mean()
         return score_map
 
     def forward(self, x, y, sampling=False):
@@ -280,7 +246,7 @@ class LatentScoreNetwork6(Transformer):
         else:
             with torch.no_grad() if self.modeltype == "fakegrad" else suppress():
                 if line_search:
-                    z = self.energy_line_search2(z, y_mask, x_states, x_mask, None, n_iter=n_iter)
+                    z = self.energy_line_search(z, y_mask, x_states, x_mask, None, n_iter=n_iter)
                 else:
                     z = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, step_size=step_size)
 
