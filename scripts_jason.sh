@@ -4,11 +4,24 @@ export CUDA_VISIBLE_DEVICES=0
 
 cd /misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/
 
+# 05/18 prince. train EBM on WMT'14 En->De
+python run_ebm.py --opt_dtok wmt16_roen --opt_batchtokens 8192 --opt_distill --opt_scorenet --train --tensorboard --opt_modeltype realgrad --opt_train_delta_steps 4 --opt_fixbug2 --opt_direction_n_layers 6 --opt_train_sgd_steps 1 --opt_train_step_size 1.0
+python run_ebm.py --opt_dtok wmt16_roen --opt_batchtokens 8192 --opt_distill --opt_scorenet --train --tensorboard --opt_modeltype realgrad --opt_train_delta_steps 4 --opt_fixbug2 --opt_direction_n_layers 5 --opt_train_sgd_steps 1 --opt_train_step_size 1.0
+
+# 05/18 cassio. train score EBM on WMT'14 En->De
+python run_ebm.py --opt_dtok wmt14_fair_ende --opt_batchtokens 8192 --opt_distill --opt_scorenet --train --tensorboard --opt_modeltype fakegrad --opt_train_delta_steps 4 --opt_hiddensz 512 --opt_embedsz 512 --opt_priorl 6 --opt_decoderl 6 --opt_heads 8 --opt_fixbug2 --opt_direction_n_layers 6 --opt_ebm_lr 0.0001 --opt_train_sgd_steps 1 --opt_train_step_size 1.0
+python run_ebm.py --opt_dtok wmt14_fair_ende --opt_batchtokens 8192 --opt_distill --opt_scorenet --train --tensorboard --opt_modeltype fakegrad --opt_train_delta_steps 4 --opt_hiddensz 512 --opt_embedsz 512 --opt_priorl 6 --opt_decoderl 6 --opt_heads 8 --opt_fixbug2 --opt_direction_n_layers 5 --opt_ebm_lr 0.0001 --opt_train_sgd_steps 1 --opt_train_step_size 1.0
+
 # 05/15 prince. train EBM on WMT'16 Ro->En
 python run_ebm.py --opt_dtok wmt16_roen --opt_batchtokens 8192 --opt_distill --opt_scorenet --train --tensorboard --opt_modeltype fakegrad --opt_train_delta_steps 4 --opt_fixbug2 --opt_direction_n_layers 4
 python run_ebm.py --opt_dtok wmt16_roen --opt_batchtokens 8192 --opt_distill --opt_scorenet --train --tensorboard --opt_modeltype fakegrad --opt_train_delta_steps 4 --opt_fixbug2 --opt_direction_n_layers 5
 python run_ebm.py --opt_dtok wmt16_roen --opt_batchtokens 8192 --opt_distill --opt_scorenet --train --tensorboard --opt_modeltype fakegrad --opt_train_delta_steps 4 --opt_fixbug2 --opt_direction_n_layers 6
 #python run_ebm.py --opt_dtok wmt16_roen --opt_batchtokens 8192 --opt_distill --opt_scorenet --opt_modeltype fakegrad --opt_train_delta_steps 4 --opt_fixbug2 --opt_direction_n_layers 6 --batch_test --evaluate
+
+# 05/15 cassio. train EBM on WMT'16 Ro->En
+python run_ebm.py --opt_dtok wmt16_roen --opt_batchtokens 8192 --opt_distill --opt_scorenet --train --tensorboard --opt_modeltype fakegrad --opt_train_delta_steps 4 --opt_fixbug2 --opt_direction_n_layers 5  --opt_train_sgd_steps 1 --opt_train_step_size 1.0
+python run_ebm.py --opt_dtok wmt16_roen --opt_batchtokens 8192 --opt_distill --opt_scorenet --train --tensorboard --opt_modeltype fakegrad --opt_train_delta_steps 4 --opt_fixbug2 --opt_direction_n_layers 6 --opt_train_sgd_steps 1 --opt_train_step_size 1.0
+#python run_ebm.py --opt_dtok wmt16_roen --opt_batchtokens 8192 --opt_distill --opt_scorenet --opt_modeltype fakegrad --opt_train_delta_steps 4 --opt_fixbug2 --opt_direction_n_layers 6 --opt_train_sgd_steps 1 --opt_train_step_size 1.0 --batch_test --evaluate --opt_Tsgd_steps 0 --opt_Tstep_size 1.0
 
 # 05/13 prince. train LVM on WMT'16 Ro->En
 python run_lvm.py --opt_dtok wmt16_roen --opt_batchtokens 4092 --opt_distill --opt_latentdim 256 --opt_priorl 6 --opt_decoderl 6 --opt_hiddensz 256 --opt_embedsz 256 --opt_heads 8 --opt_fixbug2 --opt_lr 0.0003 --train --tensorboard

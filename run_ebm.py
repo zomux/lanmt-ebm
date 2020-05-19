@@ -39,6 +39,7 @@ TRAINING_MAX_TOKENS = 60
 envswitch.register("shu", "data_root", "{}/data/wmt14_ende_fair".format(os.getenv("HOME")))
 #envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/iwslt/iwslt16_ende")
 envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/wmt/wmt16/en_ro")
+#envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/wmt/wmt14/wmt14_ende_fair")
 envswitch.register("jason", "data_root", "/misc/vlgscratch4/ChoGroup/jason/corpora/iwslt/iwslt16_ende")
 
 envswitch.register("jason_prince", "home_dir", "/scratch/yl1363/lanmt-ebm")
@@ -58,8 +59,9 @@ envswitch.register(
 )
 envswitch.register(
     #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints_lanmt/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
-    "jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints/lvm/wmt16_roen/lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt16_roen_fastanneal_longertrain.pt"
     #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints/lvm/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_fastanneal_fixbug2_latentdim-2_lr-0.0003.pt"
+    "jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints/lvm/wmt16_roen/lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt16_roen_fastanneal_longertrain.pt"
+    #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints/lvm/wmt14_ende_fair/basemodel_wmt14_ende_x5longertrain_v2.pt"
 )
 
 ap = ArgumentParser()
@@ -577,10 +579,13 @@ if OPTS.evaluate or OPTS.all:
         if "iwslt" in OPTS.dtok:
             evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
         elif "wmt" in OPTS.dtok:
-           script = "{}/scripts/detokenize.perl".format(os.path.dirname(__file__))
-           os.system("perl {} < {} > {}.detok".format(script, hyp_path, hyp_path))
-           hyp_path = hyp_path + ".detok"
-           evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
+            if envswitch.who() == "shu":
+                script = "{}/scripts/detokenize.perl".format(os.path.dirname(__file__))
+            else:
+                script = os.path.join(envswitch.load("home_dir"), "scripts", "detokenize.perl")
+            os.system("perl {} < {} > {}.detok".format(script, hyp_path, hyp_path))
+            hyp_path = hyp_path + ".detok"
+            evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
         else:
             evaluator = MosesBLEUEvaluator(ref_path=ref_path)
         bleu = evaluator.evaluate(hyp_path)

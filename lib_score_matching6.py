@@ -171,7 +171,7 @@ class LatentScoreNetwork6(Transformer):
             stddev = p_stddev * torch.randn_like(p_stddev)
             stddev = stddev * np.random.random_sample() * self.noise
             z_ini += stddev
-            if self.train_sgd_steps > 0 and self._mycnt > 50000 and np.random.random_sample() < 0.5:
+            if self.train_sgd_steps > 0 and self._mycnt > 100000 and np.random.random_sample() < 0.5:
                 with torch.no_grad() if self.modeltype == "fakegrad" else suppress():
                     z_ini = self.energy_sgd(
                         z_ini, y_mask, x_states, x_mask,
