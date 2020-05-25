@@ -37,7 +37,8 @@ TRAINING_MAX_TOKENS = 60
 
 # Shu paths
 envswitch.register("shu", "data_root", "{}/data/wmt14_ende_fair".format(os.getenv("HOME")))
-envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/iwslt/iwslt16_ende")
+#envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/iwslt/iwslt16_ende")
+envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/wmt/wmt16/en_ro")
 envswitch.register("jason", "data_root", "/misc/vlgscratch4/ChoGroup/jason/corpora/iwslt/iwslt16_ende")
 
 envswitch.register("jason_prince", "home_dir", "/scratch/yl1363/lanmt-ebm")

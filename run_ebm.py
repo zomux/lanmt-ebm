@@ -38,7 +38,9 @@ TRAINING_MAX_TOKENS = 60
 
 # Shu paths
 envswitch.register("shu", "data_root", "{}/data/wmt14_ende_fair".format(os.getenv("HOME")))
-envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/iwslt/iwslt16_ende")
+#envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/iwslt/iwslt16_ende")
+envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/wmt/wmt16/en_ro")
+#envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/wmt/wmt14/wmt14_ende_fair")
 envswitch.register("jason", "data_root", "/misc/vlgscratch4/ChoGroup/jason/corpora/iwslt/iwslt16_ende")
 
 envswitch.register("jason_prince", "home_dir", "/scratch/yl1363/lanmt-ebm")
@@ -58,8 +60,10 @@ envswitch.register(
     #"jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lvm/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_fastanneal_fixbug2_latentdim-2_lr-0.0003.pt"
 )
 envswitch.register(
-    "jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints_lanmt/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
+    #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints_lanmt/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
     #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints/lvm/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_fastanneal_fixbug2_latentdim-2_lr-0.0003.pt"
+    "jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints/lvm/wmt16_roen/lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt16_roen_fastanneal_longertrain.pt"
+    #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints/lvm/wmt14_ende_fair/basemodel_wmt14_ende_x5longertrain_v2.pt"
 )
 
 ap = ArgumentParser()
@@ -104,18 +108,16 @@ ap.add_argument("--opt_noise", default=1.0, type=float)
 ap.add_argument("--opt_train_sgd_steps", default=0, type=int)
 ap.add_argument("--opt_train_step_size", default=0.0, type=float)
 ap.add_argument("--opt_train_delta_steps", default=0, type=int)
-ap.add_argument("--opt_train_interpolate_ratio", default=0.0, type=float)
 ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
 ap.add_argument("--opt_modeltype", default="whichgrad", type=str)
 ap.add_argument("--opt_ebmtype", default="transformer", type=str)
-ap.add_argument("--opt_losstype", default="cosine", type=str)
 ap.add_argument("--opt_modelclass", default="", type=str)
 ap.add_argument("--opt_fin", default="delta", type=str)
 ap.add_argument("--opt_corrupt", action="store_true")
 ap.add_argument("--opt_Tsgd_steps", default=1, type=int)
 ap.add_argument("--opt_Tstep_size", default=0.8, type=float, help="step size for EBM SGD")
-ap.add_argument("--opt_Treport_log_joint", action="store_true")
 ap.add_argument("--opt_Treport_elbo", action="store_true")
+ap.add_argument("--opt_Tline_search", action="store_true")
 ap.add_argument("--opt_decgrad", action="store_true", help="use decoder gradient as target of score matching")
 ap.add_argument("--opt_refine_from_mean", action="store_true")
 ap.add_argument("--opt_deltasteps", type=int, default=2)
@@ -216,10 +218,7 @@ if is_root_node():
         except:
             pass
         if envswitch.who() != "shu":
-            tb_str = "{}_{}_lat{}_noise{}_lr{}".format(OPTS.modeltype, OPTS.losstype, OPTS.latentdim, OPTS.noise, OPTS.ebm_lr)
-            if OPTS.train_sgd_steps > 0:
-                tb_str += "_imit{}".format(OPTS.train_sgd_steps)
-            tb_logdir = os.path.join(HOME_DIR, "tensorboard", "ebm", OPTS.dtok, tb_str)
+            tb_logdir = os.path.join(HOME_DIR, "tensorboard", "ebm", OPTS.dtok, OPTS.model_tag)
             for logdir in [tb_logdir+"_train", tb_logdir+"_dev"]:
                 os.makedirs(logdir, exist_ok=True)
         else:
@@ -332,9 +331,7 @@ if OPTS.scorenet:
         train_sgd_steps=OPTS.train_sgd_steps,
         train_step_size=OPTS.train_step_size,
         train_delta_steps=OPTS.train_delta_steps,
-        losstype=OPTS.losstype,
         modeltype=OPTS.modeltype,
-        train_interpolate_ratio=OPTS.train_interpolate_ratio,
         ebm_useconv=OPTS.ebm_useconv,
         direction_n_layers=OPTS.direction_n_layers,
         magnitude_n_layers=OPTS.magnitude_n_layers,
@@ -367,8 +364,8 @@ if OPTS.train or OPTS.all:
     trainer.configure(
         save_path=OPTS.model_path,
         n_valid_per_epoch=n_valid_per_epoch,
-        criteria="cosine_sim" if OPTS.scorenet else "loss",
-        comp_fn=max if OPTS.scorenet else min,
+        criteria="loss" if OPTS.scorenet else "loss",
+        comp_fn=min if OPTS.scorenet else min,
         tensorboard_logdir=tb_logdir,
         clip_norm=0.1 if OPTS.clipnorm else 0
     )
@@ -518,18 +515,10 @@ if OPTS.batch_test:
 
         if OPTS.scorenet:
             with torch.no_grad() if OPTS.modeltype == "fakegrad" else suppress():
-                targets, _, _ = scorenet.translate(x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size)
+                targets, _, _ = scorenet.translate(
+                    x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size, line_search=OPTS.Tline_search)
         else:
             targets, _, _ = nmt.translate(x, refine_steps=OPTS.Tsgd_steps)
-        if envswitch.who() != "shu" and OPTS.Treport_log_joint:
-            with torch.no_grad():
-                logpyz, logpy, logpz = nmt.compute_log_joint(x, z, targets, y_mask)
-                logpyz = logpyz.cpu().numpy().tolist()
-                logpy = logpy.cpu().numpy().tolist()
-                logpz = logpz.cpu().numpy().tolist()
-                logpyzs.extend(logpyz)
-                logpys.extend(logpy)
-                logpzs.extend(logpz)
         if envswitch.who() != "shu" and OPTS.Treport_elbo:
             with torch.no_grad():
                 elbo, logpy, logpz, logqz = nmt.compute_elbo(x, targets)
@@ -545,14 +534,6 @@ if OPTS.batch_test:
         output_tokens.extend(target_tokens)
         sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
         sys.stdout.flush()
-    if envswitch.who() != "shu" and OPTS.Treport_log_joint:
-        elbo_file_path = os.path.join(HOME_DIR, "log_joint_file_{}".format(OPTS.modeltype))
-        elbo_file = open(elbo_file_path, "a")
-        elbo_file.write(
-            "{},{},{:.4f},{:.4f},{:.4f}\r\n".format(
-                OPTS.Tsgd_steps, OPTS.Tstep_size,
-                np.mean(logpys), np.mean(logpzs), np.mean(logpyzs)))
-        elbo_file.close()
     if envswitch.who() != "shu" and OPTS.Treport_elbo:
         elbo_file_path = os.path.join(HOME_DIR, "elbo_file_{}".format(OPTS.modeltype))
         elbo_file = open(elbo_file_path, "a")
@@ -606,10 +587,13 @@ if OPTS.evaluate or OPTS.all:
         if "iwslt" in OPTS.dtok:
             evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
         elif "wmt" in OPTS.dtok:
-           script = "{}/scripts/detokenize.perl".format(os.path.dirname(__file__))
-           os.system("perl {} < {} > {}.detok".format(script, hyp_path, hyp_path))
-           hyp_path = hyp_path + ".detok"
-           evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
+            if envswitch.who() == "shu":
+                script = "{}/scripts/detokenize.perl".format(os.path.dirname(__file__))
+            else:
+                script = os.path.join(envswitch.load("home_dir"), "scripts", "detokenize.perl")
+            os.system("perl {} < {} > {}.detok".format(script, hyp_path, hyp_path))
+            hyp_path = hyp_path + ".detok"
+            evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
         else:
             evaluator = MosesBLEUEvaluator(ref_path=ref_path)
         bleu = evaluator.evaluate(hyp_path)
