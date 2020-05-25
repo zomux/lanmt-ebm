@@ -315,6 +315,7 @@ class LatentScoreNetwork6(Transformer):
         # Predict length
         x_lens = x_mask.sum(1)
         delta = lanmt.predict_length(x_states, x_mask)
+        import pdb;pdb.set_trace()
         y_lens = delta.long() + x_lens.long()
         # y_lens = x_lens
         y_max_len = torch.max(y_lens.long()).item()

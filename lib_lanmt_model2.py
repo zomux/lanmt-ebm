@@ -81,22 +81,22 @@ class LANMTModel2(Transformer):
         embed_layer = self.embed_layer
         self.pos_embed_layer = PositionalEmbedding(self.hidden_size)
         self.x_encoder = TransformerEncoder(
-          None, self.hidden_size, self.encoder_layers)
+          None, self.hidden_size, 5 if OPTS.fix_layers else self.encoder_layers)
 
         # Prior p(z|x)
         self.prior_encoder = TransformerCrossEncoder(
-          None, self.hidden_size, self.prior_layers)
+          None, self.hidden_size, 3 if OPTS.fix_layers else self.prior_layers)
         self.p_hid2lat = nn.Linear(self.hidden_size, self.latent_dim * 2)
 
         # Approximate Posterior q(z|y,x)
         self.q_encoder_xy = TransformerCrossEncoder(
-          None, self.hidden_size, self.q_layers)
+          None, self.hidden_size, 3 if OPTS.fix_layers else self.q_layers)
         self.q_hid2lat = nn.Linear(self.hidden_size, self.latent_dim * 2)
 
         # Decoder p(y|x,z)
         self.lat2hid = nn.Linear(self.latent_dim, self.hidden_size)
         self.decoder = TransformerCrossEncoder(
-          None, self.hidden_size, self.decoder_layers, skip_connect=True)
+          None, self.hidden_size, 3 if OPTS.fix_layers else self.decoder_layers, skip_connect=True)
 
         # Length prediction
         #self.length_predictor = nn.Linear(self.hidden_size, 100)
@@ -158,15 +158,20 @@ class LANMTModel2(Transformer):
         kl += torch.log(p_stddev + 1e-8) - torch.log(q_stddev + 1e-8)
         kl += (q_stddev ** 2 + (q_mean - p_mean)**2) / (2 * p_stddev**2)
         kl -= 0.5
+        kl = kl.sum(-1)
         return kl
 
-    def predict_length(self, p_states, x_mask):
+    def predict_length(self, p_states, x_mask, return_topk=1):
         """Predict the target length based on latent variables and source states.
         """
         mean_z = ( p_states * x_mask[:, :, None]).sum(1) / x_mask.sum(1)[:, None]
         logits = self.length_predictor(mean_z)
         delta = logits.argmax(-1) - 50
-        return delta
+        if return_topk == 1:
+            return delta
+        else:
+            topk = logits.topk(return_topk, dim=1).indices - 50
+            return topk
 
     def compute_final_loss(self, q_prob, p_prob, y_mask, score_map):
         """ Compute the report the loss.
@@ -191,13 +196,14 @@ class LANMTModel2(Transformer):
         score_map["KL_budget"] = torch.tensor(budget)
         # Compute KL divergence
         max_mask = self.to_float((kl - budget) > 0.)
-        kl = kl * max_mask + (1. - max_mask) * budget # [batch_size, targets_length, latent_size]
-        kl = (kl * y_mask[:, :, None]).sum() / y_mask.sum() # [1]
+        kl = kl * max_mask + (1. - max_mask) * budget
+        kl_loss = (kl * y_mask / y_mask.shape[0]).sum()
         # Report KL divergence
-        score_map["kl"] = kl
+        score_map["kl"] = kl_loss
+        # Also report the averge KL for each token
+        score_map["tok_kl"] = (kl * y_mask / y_mask.sum()).sum()
         # Report cross-entropy loss
         score_map["nll"] = score_map["loss"]
-        score_map["neg_elbo"] = score_map["nll"] + score_map["kl"]
         # Cross-entropy loss is *already* backproped when computing softmaxes in shards
         # So only need to compute the remaining losses and then backprop them
         remain_loss = score_map["kl"].clone() * self.KL_weight
@@ -263,7 +269,10 @@ class LANMTModel2(Transformer):
         # Compute q(z|x,y)
         q_prob = self.compute_posterior(y, y_mask, x_states, x_mask)
         q_mean, q_stddev = q_prob[..., :self.latent_dim], F.softplus(q_prob[..., self.latent_dim:])
-        z_q = q_mean + q_stddev * torch.randn_like(q_stddev)
+        if not self.training:
+            z_q = q_mean
+        else:
+            z_q = q_mean + q_stddev * torch.randn_like(q_stddev)
 
         # Compute length prediction loss
         length_scores = self.compute_length_predictor_loss(x_states, x_mask, y_mask)
@@ -275,8 +284,7 @@ class LANMTModel2(Transformer):
 
         # --------------------------  Compute losses ------------------------#
         decoder_outputs = TensorMap({"final_states": decoder_states})
-        #denom = x.shape[0]
-        denom = None
+        denom = x.shape[0]
         if self._shard_size is not None and self._shard_size > 0:
             loss_scores, decoder_tensors, decoder_grads = self.compute_shard_loss(
                 decoder_outputs, y, y_mask, denominator=denom, ignore_first_token=False, backward=False
@@ -288,7 +296,7 @@ class LANMTModel2(Transformer):
 
         score_map, remain_loss = self.compute_final_loss(q_prob, p_prob, y_mask, score_map)
         # Report smoothed BLEU during validation
-        if not torch.is_grad_enabled() and self.training_criteria == "BLEU":
+        if not torch.is_grad_enabled() and not self.training:
             decoder_outputs.unselect_batch()
             logits = self.expander_nn(decoder_outputs["final_states"])
             predictions = logits.argmax(-1)
@@ -300,7 +308,7 @@ class LANMTModel2(Transformer):
             decoder_grads.append(None)
             torch.autograd.backward(decoder_tensors, decoder_grads)
         if torch.isnan(score_map["loss"]) or torch.isinf(score_map["loss"]):
-            import ipdb; ipdb.set_trace()
+            import pdb;pdb.set_trace()
         return score_map
 
     def compute_log_joint(self, x, z, y, y_mask):

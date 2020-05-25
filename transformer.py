@@ -7,13 +7,15 @@ from __future__ import print_function
 import os, sys
 from torch import optim
 import importlib
+import time
+import numpy as np
 
 import torch
 from nmtlab import MTTrainer, MTDataset
 from nmtlab.utils import OPTS
 from nmtlab.models import Transformer
 from nmtlab.schedulers import TransformerScheduler
-from nmtlab.utils import is_root_node
+from nmtlab.utils import is_root_node, Vocab
 sys.path.append(".")
 sys.path.append("./nmtlab")
 
@@ -121,35 +123,93 @@ if OPTS.train or OPTS.all:
     if OPTS.resume:
         trainer.load()
     trainer.run()
+# if OPTS.test or OPTS.all:
+#     import torch
+#     from nmtlab.decoding import BeamTranslator
+#     translator = BeamTranslator(nmt, dataset.src_vocab(), dataset.tgt_vocab(), beam_size=OPTS.Tbeam)
+#     if OPTS.chkavg:
+#         chk_count = 0
+#         state_dict = None
+#         for i in range(1000):
+#             path = OPTS.model_path + ".chk{}".format(i)
+#             if os.path.exists(path):
+#                 chkpoint = torch.load(path)["model_state"]
+#                 if state_dict is None:
+#                     state_dict = chkpoint
+#                 else:
+#                     for key, val in chkpoint.items():
+#                         state_dict[key] += val
+#                 chk_count += 1
+#         for key in state_dict.keys():
+#             state_dict[key] /= float(chk_count)
+#         if is_root_node():
+#             print("Averaged {} checkpoints".format(chk_count))
+#         translator.model.load_state_dict(state_dict)
+#     else:
+#         assert os.path.exists(OPTS.model_path)
+#         translator.load(OPTS.model_path)
+#     translator.batch_translate(test_src_corpus, OPTS.result_path)
+#     if is_root_node():
+#         print("[Translation Result]")
+#         print(OPTS.result_path)
+
 if OPTS.test or OPTS.all:
-    import torch
+    # Translate using only one GPU
+    if not is_root_node():
+        sys.exit()
+    torch.manual_seed(OPTS.seed)
+    # Load the autoregressive model for rescoring if neccessary
+    if OPTS.Tteacher_rescore:
+        assert os.path.exists(pretrained_autoregressive_path)
+        load_rescoring_transformer(basic_options, pretrained_autoregressive_path)
+    model_path = OPTS.model_path
+    if not os.path.exists(model_path):
+        print("Cannot find model in {}".format(model_path))
+        sys.exit()
+    # model_path = "{}/basemodel_wmt14_ende_x5longertrain_v2.pt.bak".format(DATA_ROOT)
+    nmt.load(model_path)
+    if torch.cuda.is_available():
+        nmt.cuda()
+    nmt.train(False)
     from nmtlab.decoding import BeamTranslator
     translator = BeamTranslator(nmt, dataset.src_vocab(), dataset.tgt_vocab(), beam_size=OPTS.Tbeam)
-    if OPTS.chkavg:
-        chk_count = 0
-        state_dict = None
-        for i in range(1000):
-            path = OPTS.model_path + ".chk{}".format(i)
-            if os.path.exists(path):
-                chkpoint = torch.load(path)["model_state"]
-                if state_dict is None:
-                    state_dict = chkpoint
-                else:
-                    for key, val in chkpoint.items():
-                        state_dict[key] += val
-                chk_count += 1
-        for key in state_dict.keys():
-            state_dict[key] /= float(chk_count)
-        if is_root_node():
-            print("Averaged {} checkpoints".format(chk_count))
-        translator.model.load_state_dict(state_dict)
-    else:
-        assert os.path.exists(OPTS.model_path)
-        translator.load(OPTS.model_path)
-    translator.batch_translate(test_src_corpus, OPTS.result_path)
-    if is_root_node():
-        print("[Translation Result]")
-        print(OPTS.result_path)
+    src_vocab = Vocab(src_vocab_path)
+    tgt_vocab = Vocab(tgt_vocab_path)
+    result_path = OPTS.result_path
+    # Read data
+    lines = open(test_src_corpus).readlines()
+    latent_candidate_num = OPTS.Tcandidate_num if OPTS.Tlatent_search else None
+    decode_times = []
+    if OPTS.profile:
+        lines = lines * 10
+    # lines = lines[:100]
+    # trains_stop_stdout_monitor()
+    with open(OPTS.result_path, "w") as outf:
+        for i, line in enumerate(lines):
+            # Make a batch
+            tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
+            x = torch.tensor([tokens])
+            if torch.cuda.is_available():
+                x = x.cuda()
+            start_time = time.time()
+            # with torch.no_grad() if not OPTS.scorenet else nullcontext():
+                # Predict latent and target words from prior
+            target_sent, _ = translator.translate(line)
+            if target_sent is None:
+                target_sent = ""
+            # target_words = targets[0].cpu()[0].numpy().tolist()
+            # Record decoding time
+            end_time = time.time()
+            decode_times.append((end_time - start_time) * 1000.)
+            # Convert token IDs back to words
+            # target_sent = " ".join(target_words)
+            outf.write(target_sent + "\n")
+            sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
+            sys.stdout.flush()
+    sys.stdout.write("\n")
+    # trains_restore_stdout_monitor()
+    print("Average decoding time: {:.0f}ms, std: {:.0f}".format(np.mean(decode_times), np.std(decode_times)))
+
 if OPTS.evaluate or OPTS.all:
     from nmtlab.evaluation import MosesBLEUEvaluator, SacreBLEUEvaluator
     if is_root_node():
