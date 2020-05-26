@@ -120,8 +120,8 @@ class LANMTModel2(Transformer):
             self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
         else:
             # NOTE : FinalLinear for IWSLT, otherwise nn.Linear
-            #self.expander_nn = FinalLinear()
-            self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
+            self.expander_nn = FinalLinear()
+            #self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
 
         self.label_smooth = LabelSmoothingKLDivLoss(0.1, self._tgt_vocab_size, 0)
         self.set_stepwise_training(False)
@@ -409,8 +409,11 @@ class LANMTModel2(Transformer):
         if y_mask is None:
             x_lens = x_mask.sum(1)
             delta = self.predict_length(x_states, x_mask)
+            # NOTE experimental
+            # delta = delta + (x_lens * 0.02).long() # IWSLT DEEN
+            # delta = delta + (x_lens * 0.06).long() # WMT ROEN
             y_lens = delta.long() + x_lens.long()
-            # y_lens = x_lens
+            # y_lens = (y_lens.float() * 1.00).long()
             y_max_len = torch.max(y_lens.long()).item()
             batch_size = list(x_states.shape)[0]
             y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len)
