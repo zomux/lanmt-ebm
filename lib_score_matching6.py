@@ -96,7 +96,17 @@ class LatentScoreNetwork6(Transformer):
 
             score = self.score_fn.score(z, y_mask, x_states, x_mask, create_graph=True).detach()
             score = score * step_size
-
+            #magnitude = self.magnitude_fn(z, y_mask, x_states, x_mask) # [bsz]
+            #print (magnitude.cpu().numpy().tolist())
+            #score_norm = (score ** 2) * y_mask[:, :, None]
+            #score_norm = score_norm.sum(2).sum(1).sqrt()
+            #multiplier = magnitude * y_length.sqrt() / score_norm
+            #score = score * multiplier[:, None, None] * step_size
+            if OPTS.Tpartial_refine:
+                norm = score.norm(2, dim=2)
+                n_replace = max(int(norm.shape[1] / 5), 1)
+                topk = norm.topk(n_replace, dim=1).indices
+                score[torch.arange(score.shape[0]), topk] = 0.
             z = z + score
         return z
 
@@ -256,14 +266,15 @@ class LatentScoreNetwork6(Transformer):
         # Predict length
         if y_mask is None:
             x_lens = x_mask.sum(1)
-            delta = lanmt.predict_length(x_states, x_mask)
+            delta = lanmt.predict_length(x_states, x_mask, return_topk=OPTS.Tsearch_len)
             # NOTE experimental
             # delta = delta + (x_lens * 0.02).long() # IWSLT DEEN
             # delta = delta + (x_lens * 0.06).long() # WMT ROEN
             y_lens = delta.long() + x_lens.long()
+            y_lens = y_lens.flatten()
             # y_lens = x_lens
             y_max_len = torch.max(y_lens.long()).item()
-            batch_size = list(x_states.shape)[0]
+            batch_size = list(x_states.shape)[0] * OPTS.Tsearch_len
             y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len).cuda()
             y_mask = (y_mask < y_lens[:, None])
             y_mask = y_mask.float()
@@ -271,7 +282,15 @@ class LatentScoreNetwork6(Transformer):
         # Compute p(z|x)
         with torch.no_grad():
             p_prob = lanmt.compute_prior(y_mask, x_states, x_mask)
-        z = p_prob[..., :lanmt.latent_dim]
+        if OPTS.Tsearch_lat == 1:
+            z = p_prob[..., :lanmt.latent_dim]
+        else:
+            mean, stddev = p_prob[..., :lanmt.latent_dim], F.softplus(p_prob[..., lanmt.latent_dim:])
+            B, T, L = stddev.shape
+            z = mean[:, None, :, :] + torch.randn((B, OPTS.Tsearch_lat, T, L)).cuda() * stddev[:, None, :, :] * 0.5
+            z = z.view(B * OPTS.Tsearch_lat, T, -1)
+            y_mask = y_mask.repeat(OPTS.Tsearch_lat, 1).view(OPTS.Tsearch_lat, B, -1).transpose(1, 0).reshape(OPTS.Tsearch_lat * B, -1)
+
         if OPTS.Twithout_ebm:
             z = z
         else:
@@ -284,7 +303,20 @@ class LatentScoreNetwork6(Transformer):
 
         with torch.no_grad():
             logits = lanmt.get_logits(z, y_mask, x_states, x_mask)
-        y_pred = logits.argmax(-1)
+        if OPTS.Tsearch_len > 1:
+            # Reranking to find the best one
+            y_pred = logits.argmax(-1)
+            logp = torch.log_softmax(logits, 2)
+            B, T, H = logp.shape
+            expanded_logp = logp.view(B*T, H)
+            pred_logp = expanded_logp[torch.arange(B * T), y_pred.flatten()].view(B, T)
+            mean_pred_logp = (pred_logp * y_mask).sum(1) / y_mask.sum(1)
+            ranks = mean_pred_logp.view(x_states.shape[0], OPTS.Tsearch_len * OPTS.Tsearch_lat)
+            best_pred_idx = ranks.argmax(1)
+            ranked_preds = y_pred.view(x_states.shape[0], OPTS.Tsearch_len * OPTS.Tsearch_lat, -1)
+            y_pred = ranked_preds[torch.arange(x_states.shape[0]), best_pred_idx]
+        else:
+            y_pred = logits.argmax(-1)
         y_pred = y_pred * y_mask.long()
         return y_pred, z, y_mask
 

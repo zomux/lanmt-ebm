@@ -31,6 +31,7 @@ from lib_lanmt_model2 import LANMTModel2
 from lib_rescoring import load_rescoring_transformer
 from lib_envswitch import envswitch
 from datasets import get_dataset_paths
+from utils import short_tag
 
 DATA_ROOT = "/misc/vlgscratch4/ChoGroup/jason/corpora/iwslt/iwslt16_ende"
 TRAINING_MAX_TOKENS = 60
@@ -50,8 +51,9 @@ HOME_DIR = envswitch.load("home_dir", default=DATA_ROOT)
 envswitch.register(
     "shu", "lanmt_path",
     os.path.join(DATA_ROOT,
-        "lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt14_fair_ende_fastanneal_longertrain.pt"
-    )
+        # "lanmt_anne.ptalbudget_batchtokens-8192_distill_dtok-wmt14_fair_ende_fastanneal_longertrain.pt"
+        "lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt14_fair_ende_embedsz-512_fastanneal_heads-8_hiddensz-512_x5longertrain.pt.bak"
+     )
 )
 envswitch.register(
     "jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
@@ -75,6 +77,7 @@ ap.add_argument("--analyze_latents", action="store_true")
 ap.add_argument("--profile", action="store_true")
 ap.add_argument("--test_fix_length", type=int, default=0)
 ap.add_argument("--all", action="store_true")
+ap.add_argument("--fix_layers", action="store_true")
 ap.add_argument("-tb", "--tensorboard", action="store_true")
 ap.add_argument("--use_pretrain", action="store_true", help="use pretrained model trained by Raphael Shu")
 ap.add_argument("--opt_dtok", default="iwslt16_deen", type=str, help="dataset token")
@@ -121,6 +124,8 @@ ap.add_argument("--opt_deltasteps", type=int, default=2)
 
 # Decoding options
 ap.add_argument("--opt_Twithout_ebm", action="store_true", help="without using EBM")
+ap.add_argument("--opt_Tsearch_len", default=1, type=int, help="search for multiple length")
+ap.add_argument("--opt_Tsearch_lat", default=1, type=int, help="search for multiple length")
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
 ap.add_argument("--opt_annealbudget", action="store_true", help="switch of annealing KL budget")
 ap.add_argument("--opt_fixbug1", action="store_true", help="fix bug in length converter")
@@ -136,6 +141,7 @@ ap.add_argument("--opt_Tlatent_search", action="store_true", help="whether to se
 ap.add_argument("--opt_Tteacher_rescore", action="store_true", help="whether to use teacher rescoring")
 ap.add_argument("--opt_Tcandidate_num", default=50, type=int, help="number of latent candidate for latent search")
 ap.add_argument("--opt_Tbatch_size", default=8000, type=int, help="batch size for batch translate")
+ap.add_argument("--opt_Tpartial_refine", action="store_true")
 
 # Experimental options
 ap.add_argument("--opt_fp16", action="store_true")
@@ -157,17 +163,18 @@ ap.add_argument("--result_path",
                 default="/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/ebm.result")
 OPTS.parse(ap)
 
-if OPTS.hidden_size == 512:
-    envswitch.register("shu", "lanmt_path",
-                       os.path.join(DATA_ROOT, "lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt14_fair_ende_embedsz-512_hiddensz-512_longertrain.pt.log"))
 
 
 OPTS.model_path = OPTS.model_path.replace(DATA_ROOT, OPTS.root)
 OPTS.result_path = OPTS.result_path.replace(DATA_ROOT, OPTS.root)
+result_dir = os.path.join(DATA_ROOT, "results")
+if not os.path.exists(result_dir):
+    os.mkdir(result_dir)
+OPTS.result_path = "{}/{}.result".format(result_dir, short_tag(OPTS.result_tag))
 
 if envswitch.who() == "shu":
     OPTS.model_path = os.path.join(DATA_ROOT, os.path.basename(OPTS.model_path))
-    OPTS.result_path = os.path.join(DATA_ROOT, os.path.basename(OPTS.result_path))
+    # OPTS.result_path = os.path.join(DATA_ROOT, os.path.basename(OPTS.result_path))
     OPTS.fixbug1 = True
     OPTS.fixbug2 = True
 else:
@@ -286,7 +293,7 @@ lanmt_options.update(dict(
     latent_dim=OPTS.latentdim,
     KL_budget=0. if OPTS.finetune else OPTS.klbudget,
     budget_annealing=OPTS.annealbudget,
-    max_train_steps=training_maxsteps,
+    max_train_steps=training_maxsteps if OPTS.modeltype != "realgrad" else training_maxsteps * 2,
     fp16=OPTS.fp16
 ))
 
@@ -294,6 +301,7 @@ nmt = LANMTModel2(**lanmt_options)
 if OPTS.scorenet:
     OPTS.shard = 0
     lanmt_model_path = envswitch.load("lanmt_path")
+    print("lanmt_model_path", lanmt_model_path)
     assert os.path.exists(lanmt_model_path)
     nmt.load(lanmt_model_path)
     if is_root_node():

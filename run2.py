@@ -49,8 +49,8 @@ HOME_DIR = envswitch.load("home_dir", default=DATA_ROOT)
 envswitch.register(
     "shu", "lanmt_path",
     os.path.join(DATA_ROOT,
-        "lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt14_fair_ende_fastanneal_longertrain.pt"
-    )
+        "lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt14_fair_ende_embedsz-512_fastanneal_heads-8_hiddensz-512_x5longertrain.pt.bak"
+     )
 )
 envswitch.register(
     "jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
@@ -67,6 +67,7 @@ ap.add_argument("--batch_test", action="store_true")
 ap.add_argument("--train", action="store_true")
 ap.add_argument("--evaluate", action="store_true")
 ap.add_argument("--analyze_latents", action="store_true")
+ap.add_argument("--fix_layers", action="store_true")
 ap.add_argument("--profile", action="store_true")
 ap.add_argument("--test_fix_length", type=int, default=0)
 ap.add_argument("--all", action="store_true")
@@ -87,9 +88,11 @@ ap.add_argument("--opt_x3longertrain", action="store_true")
 ap.add_argument("--opt_x5longertrain", action="store_true")
 
 # Options for LANMT
+ap.add_argument("--opt_encoderl", type=int, default=5, help="layers for each z encoder")
 ap.add_argument("--opt_priorl", type=int, default=6, help="layers for each z encoder")
 ap.add_argument("--opt_decoderl", type=int, default=6, help="number of decoder layers")
 ap.add_argument("--opt_latentdim", default=8, type=int, help="dimension of latent variables")
+ap.add_argument("--opt_tag", default="", type=str)
 
 # Options for EBM
 ap.add_argument("--opt_decoder", default="fixed", type=str)
@@ -151,7 +154,7 @@ if OPTS.hidden_size == 512:
     envswitch.register(
         "shu", "lanmt_path",
         os.path.join(DATA_ROOT,
-            "lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt14_fair_ende_embedsz-512_fastanneal_hiddensz-512_latentdim-512_priorl-4_x5longertrain.pt"
+             "lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt14_fair_ende_embedsz-512_fastanneal_heads-8_hiddensz-512_x5longertrain.pt.bak"
         )
     )
 
@@ -279,6 +282,7 @@ basic_options = dict(
 
 lanmt_options = basic_options.copy()
 lanmt_options.update(dict(
+    encoder_layers=OPTS.encoderl,
     prior_layers=OPTS.priorl, decoder_layers=OPTS.decoderl,
     q_layers=OPTS.priorl,
     latent_dim=OPTS.latentdim,
@@ -355,7 +359,8 @@ if OPTS.train or OPTS.all:
         criteria="cosine_sim" if OPTS.scorenet else "loss",
         comp_fn=max if OPTS.scorenet else min,
         tensorboard_logdir=tb_logdir,
-        clip_norm=0.1 if OPTS.clipnorm else 0
+        clip_norm=0.1 if OPTS.clipnorm else 0,
+        checkpoint_average=1
     )
     # if OPTS.fp16:
     #     from apex import amp
@@ -367,7 +372,7 @@ if OPTS.train or OPTS.all:
         assert os.path.exists(pretrain_path)
         nmt.load(pretrain_path)
     if OPTS.resume:
-        trainer.load()
+        trainer.load(OPTS.model_path + ".last")
     trains_stop_stdout_monitor()
     trainer.run()
     trains_restore_stdout_monitor()
@@ -386,6 +391,8 @@ if OPTS.test or OPTS.all:
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
+    # model_path = "{}/basemodel_wmt14_ende_x5longertrain_v2.pt.bak".format(DATA_ROOT)
+    # model_path += ".bak"
     nmt.load(model_path)
     if torch.cuda.is_available():
         nmt.cuda()
@@ -425,7 +432,7 @@ if OPTS.test or OPTS.all:
                 targets = scorenet.translate(x, n_iter=OPTS.Trefine_steps, step_size=1.0)
             else:
                 targets = nmt.translate(x, refine_steps=OPTS.Trefine_steps)
-            target_tokens = targets.cpu().numpy()[0].tolist()
+            target_tokens = targets[0].cpu()[0].numpy().tolist()
             if targets is None:
                 target_tokens = [2, 2, 2]
             # Record decoding time
