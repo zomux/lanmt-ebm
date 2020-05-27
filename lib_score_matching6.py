@@ -111,6 +111,34 @@ class LatentScoreNetwork6(Transformer):
             z = z + score
         return z
 
+    def energy_adaptive(self, z, y_mask, x_states, x_mask, step_size, norm_thresh=1/16, max_iters=6):
+        # z : [bsz, y_length, lat_size]
+        y_length = y_mask.sum(1).float()
+        len_int = int(y_length.item())
+        score_norm_prev = None # norm in 1st iteration (not prev, but 1st refinement step)
+        n_iter = 0
+        while True:
+            z = z.detach().clone()
+            z.requires_grad = True
+
+            score = self.score_fn.score(z, y_mask, x_states, x_mask, create_graph=True).detach()
+            score_norm = (score * y_mask[:, :, None]) ** 2
+            #score_norm = (score ** 2) * y_mask[:, :, None]
+            score_norm = score_norm.sum(2).sqrt().sum(1) / y_length
+            #score_norm = score_norm.sum(2).sum(1).sqrt() / y_length
+
+            z = z + score * step_size
+            n_iter += 1
+
+            if not (score_norm_prev is None) and (score_norm / score_norm_prev).item() < norm_thresh:
+                break
+            if n_iter >= max_iters:
+                break
+            if score_norm_prev is None:
+                score_norm_prev = score_norm
+
+        return z
+
     def compute_targets(self, z, y_mask, x_states, x_mask, p_prob, y_pred=None):
         lanmt = self.nmt()
         latent_dim = lanmt.latent_dim
@@ -240,6 +268,9 @@ class LatentScoreNetwork6(Transformer):
         if y_mask is None:
             x_lens = x_mask.sum(1)
             delta = lanmt.predict_length(x_states, x_mask, return_topk=OPTS.Tsearch_len)
+            # NOTE experimental
+            # delta = delta + (x_lens * 0.02).long() # IWSLT DEEN
+            # delta = delta + (x_lens * 0.06).long() # WMT ROEN
             y_lens = delta.long() + x_lens.long()
             y_lens = y_lens.flatten()
             if force_length is not None:
@@ -274,6 +305,7 @@ class LatentScoreNetwork6(Transformer):
                     z = self.energy_line_search(z, y_mask, x_states, x_mask, None, n_iter=n_iter)
                 else:
                     z = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, step_size=step_size)
+                    #z = self.energy_adaptive(z, y_mask, x_states, x_mask, step_size=step_size)
 
         # K-means clustering >>>
         if OPTS.Tcluster:
