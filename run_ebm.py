@@ -32,6 +32,7 @@ from lib_rescoring import load_rescoring_transformer
 from lib_envswitch import envswitch
 from datasets import get_dataset_paths
 from utils import short_tag
+from lib_rescoring_fairseq import load_rescoring_transformer
 
 DATA_ROOT = "/misc/vlgscratch4/ChoGroup/jason/corpora/iwslt/iwslt16_ende"
 TRAINING_MAX_TOKENS = 60
@@ -111,6 +112,7 @@ ap.add_argument("--opt_train_delta_steps", default=0, type=int)
 ap.add_argument("--opt_clipnorm", action="store_true", help="clip the gradient norm")
 ap.add_argument("--opt_modeltype", default="whichgrad", type=str)
 ap.add_argument("--opt_ebmtype", default="transformer", type=str)
+ap.add_argument("--opt_losstype", default="-", type=str)
 ap.add_argument("--opt_modelclass", default="", type=str)
 ap.add_argument("--opt_fin", default="delta", type=str)
 ap.add_argument("--opt_corrupt", action="store_true")
@@ -118,12 +120,14 @@ ap.add_argument("--opt_Tsgd_steps", default=1, type=int)
 ap.add_argument("--opt_Tstep_size", default=0.8, type=float, help="step size for EBM SGD")
 ap.add_argument("--opt_Treport_elbo", action="store_true")
 ap.add_argument("--opt_Tline_search", action="store_true")
+ap.add_argument("--opt_Tcluster", action="store_true")
 ap.add_argument("--opt_decgrad", action="store_true", help="use decoder gradient as target of score matching")
 ap.add_argument("--opt_refine_from_mean", action="store_true")
 ap.add_argument("--opt_deltasteps", type=int, default=2)
 
 # Decoding options
 ap.add_argument("--opt_Twithout_ebm", action="store_true", help="without using EBM")
+ap.add_argument("--opt_Tprint_lens", action="store_true", help="print length")
 ap.add_argument("--opt_Tsearch_len", default=1, type=int, help="search for multiple length")
 ap.add_argument("--opt_Tsearch_lat", default=1, type=int, help="search for multiple length")
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
@@ -392,8 +396,16 @@ if OPTS.test or OPTS.all:
     torch.manual_seed(OPTS.seed)
     # Load the autoregressive model for rescoring if neccessary
     if OPTS.Tteacher_rescore:
-        assert os.path.exists(pretrained_autoregressive_path)
-        load_rescoring_transformer(basic_options, pretrained_autoregressive_path)
+        print("loading teacher fairseq model...")
+        if OPTS.dtok == "wmt14_fair_ende":
+            fairseq_path = "{}/wmt14_ende_fairseq".format(DATA_ROOT)
+        elif OPTS.dtok == "wmt16_roen":
+            fairseq_path = "{}/wmt16_roen_fairseq".format(DATA_ROOT)
+        elif OPTS.dtok == "iwslt16_deen":
+            fairseq_path = "{}/iwslt16_deen_fairseq".format(DATA_ROOT)
+        else:
+            raise NotImplementedError
+        load_rescoring_transformer(src_vocab_path, tgt_vocab_path, fairseq_path)
     model_path = OPTS.model_path
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
@@ -414,6 +426,7 @@ if OPTS.test or OPTS.all:
     result_path = OPTS.result_path
     # Read data
     lines = open(test_src_corpus).readlines()
+    ref_lens = [len(l.strip().split()) for l in open(test_tgt_corpus)]
     latent_candidate_num = OPTS.Tcandidate_num if OPTS.Tlatent_search else None
     decode_times = []
     if OPTS.profile:
@@ -423,6 +436,8 @@ if OPTS.test or OPTS.all:
         if not lines:
             raise SystemError
         lines = [lines[0]] * 300
+    if OPTS.Tprint_lens:
+        OPTS.length_collector = []
     trains_stop_stdout_monitor()
     with open(OPTS.result_path, "w") as outf:
         for i, line in enumerate(lines):
@@ -455,6 +470,9 @@ if OPTS.test or OPTS.all:
     sys.stdout.write("\n")
     trains_restore_stdout_monitor()
     print("Average decoding time: {:.0f}ms, std: {:.0f}".format(np.mean(decode_times), np.std(decode_times)))
+    if OPTS.Tprint_lens:
+        print("Predicted length dumped")
+        open("/tmp/length_collector.txt", "w").write(str(OPTS.length_collector))
 
 # Translate multiple sentences in batch
 if OPTS.batch_test:
@@ -480,6 +498,14 @@ if OPTS.batch_test:
         scorenet.train(False)
         nmt = scorenet.nmt()
         nmt.train(False)
+    if OPTS.Tteacher_rescore:
+        if OPTS.dtok == "wmt14_fair_ende":
+            load_rescoring_transformer(
+                "{}/wmt14_fair_en.vocab".format(DATA_ROOT),
+                "{}/wmt14_fair_de.vocab".format(DATA_ROOT)
+            )
+        else:
+            raise NotImplementedError
     src_vocab = Vocab(src_vocab_path)
     tgt_vocab = Vocab(tgt_vocab_path)
     result_path = OPTS.result_path

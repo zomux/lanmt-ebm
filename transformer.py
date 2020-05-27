@@ -210,23 +210,41 @@ if OPTS.test or OPTS.all:
     # trains_restore_stdout_monitor()
     print("Average decoding time: {:.0f}ms, std: {:.0f}".format(np.mean(decode_times), np.std(decode_times)))
 
+
 if OPTS.evaluate or OPTS.all:
-    from nmtlab.evaluation import MosesBLEUEvaluator, SacreBLEUEvaluator
+    # Post-processing
     if is_root_node():
-        print("[tokenized BLEU]")
-        with open("/tmp/result.txt", "w") as outf:
-            for line in open(OPTS.result_path):
-                if not line.strip():
-                    result = "x"
-                else:
-                    result = line.strip()
-                outf.write(result + "\n")
-        if OPTS.dtok == "wmt14_ende":
-            evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
-        elif OPTS.dtok.endswith("en"):
+        hyp_path = "/tmp/namt_hyp.txt"
+        result_path = OPTS.result_path
+        with open(hyp_path, "w") as outf:
+            for line in open(result_path):
+                # Remove duplicated tokens
+                tokens = line.strip().split()
+                new_tokens = []
+                for tok in tokens:
+                    if len(new_tokens) > 0 and tok != new_tokens[-1]:
+                        new_tokens.append(tok)
+                    elif len(new_tokens) == 0:
+                        new_tokens.append(tok)
+                new_line = " ".join(new_tokens) + "\n"
+                line = new_line
+                # Remove sub-word indicator in sentencepiece and BPE
+                line = line.replace("@@ ", "")
+                if "▁" in line:
+                    line = line.strip()
+                    line = "".join(line.split())
+                    line = line.replace("▁", " ").strip() + "\n"
+                outf.write(line)
+        # Get BLEU score
+        if "wmt" in OPTS.dtok:
+            script = "{}/scripts/detokenize.perl".format(os.path.dirname(__file__))
+            os.system("perl {} < {} > {}.detok".format(script, hyp_path, hyp_path))
+            hyp_path = hyp_path + ".detok"
+            from nmtlab.evaluation import SacreBLEUEvaluator
             evaluator = SacreBLEUEvaluator(ref_path=ref_path, tokenizer="intl", lowercase=True)
         else:
-            evaluator = MosesBLEUEvaluator(ref_path)
-        print(OPTS.result_path)
-        print(evaluator.evaluate("/tmp/result.txt"))
+            evaluator = MosesBLEUEvaluator(ref_path=ref_path)
+        bleu = evaluator.evaluate(hyp_path)
+        print("BLEU =", bleu)
+
 

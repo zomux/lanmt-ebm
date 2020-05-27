@@ -24,6 +24,7 @@ from nmtlab.models import Transformer
 from nmtlab.utils import OPTS
 
 from lib_envswitch import envswitch
+from lib_kmeans import kmeans
 
 class LatentScoreNetwork6(Transformer):
 
@@ -227,7 +228,7 @@ class LatentScoreNetwork6(Transformer):
         self._mycnt += 1 # pretty hacky I know, sorry haha
         return score_map
 
-    def translate(self, x, n_iter, step_size, y_mask=None, line_search=False):
+    def translate(self, x, n_iter, step_size, y_mask=None, line_search=False, force_length=None):
         """ Testing codes.
         """
         lanmt = self.nmt()
@@ -241,12 +242,17 @@ class LatentScoreNetwork6(Transformer):
             delta = lanmt.predict_length(x_states, x_mask, return_topk=OPTS.Tsearch_len)
             y_lens = delta.long() + x_lens.long()
             y_lens = y_lens.flatten()
+            if force_length is not None:
+                y_lens[0] = force_length
+            if OPTS.Tprint_lens and OPTS.length_collector is not None:
+                OPTS.length_collector.append(y_lens.cpu().numpy()[0])
             # y_lens = x_lens
             y_max_len = torch.max(y_lens.long()).item()
             batch_size = list(x_states.shape)[0] * OPTS.Tsearch_len
             y_mask = torch.arange(y_max_len)[None, :].expand(batch_size, y_max_len).cuda()
             y_mask = (y_mask < y_lens[:, None])
             y_mask = y_mask.float()
+            original_y_mask = y_mask
 
         # Compute p(z|x)
         with torch.no_grad():
@@ -256,7 +262,7 @@ class LatentScoreNetwork6(Transformer):
         else:
             mean, stddev = p_prob[..., :lanmt.latent_dim], F.softplus(p_prob[..., lanmt.latent_dim:])
             B, T, L = stddev.shape
-            z = mean[:, None, :, :] + torch.randn((B, OPTS.Tsearch_lat, T, L)).cuda() * stddev[:, None, :, :] * 0.5
+            z = mean[:, None, :, :] + torch.randn((B, OPTS.Tsearch_lat, T, L)).cuda() * stddev[:, None, :, :] * 1.0
             z = z.view(B * OPTS.Tsearch_lat, T, -1)
             y_mask = y_mask.repeat(OPTS.Tsearch_lat, 1).view(OPTS.Tsearch_lat, B, -1).transpose(1, 0).reshape(OPTS.Tsearch_lat * B, -1)
 
@@ -269,23 +275,43 @@ class LatentScoreNetwork6(Transformer):
                 else:
                     z = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, step_size=step_size)
 
+        # K-means clustering >>>
+        if OPTS.Tcluster:
+            n_clusters = max(int(OPTS.Tsearch_lat * OPTS.Tsearch_len / 10), OPTS.Tsearch_len)
+            B, L, H = z.shape
+            flat_z = z.view(B, -1)
+            idx, centroids = kmeans(
+                X=flat_z, num_clusters=n_clusters,
+                distance='euclidean', device=torch.device('cuda:0'),
+                iter_limit=3)
+            unq_mask = torch.cat([torch.tensor([True]), idx[1:] != idx[:-1]])
+            z = z[unq_mask]
+            y_mask = y_mask[unq_mask]
+        # <<<
+
         with torch.no_grad():
             logits = lanmt.get_logits(z, y_mask, x_states, x_mask)
-        if OPTS.Tsearch_len > 1:
+        if OPTS.Tsearch_len > 1 or OPTS.Tsearch_lat > 1:
             # Reranking to find the best one
             y_pred = logits.argmax(-1)
-            logp = torch.log_softmax(logits, 2)
-            B, T, H = logp.shape
-            expanded_logp = logp.view(B*T, H)
-            pred_logp = expanded_logp[torch.arange(B * T), y_pred.flatten()].view(B, T)
-            mean_pred_logp = (pred_logp * y_mask).sum(1) / y_mask.sum(1)
-            ranks = mean_pred_logp.view(x_states.shape[0], OPTS.Tsearch_len * OPTS.Tsearch_lat)
-            best_pred_idx = ranks.argmax(1)
-            ranked_preds = y_pred.view(x_states.shape[0], OPTS.Tsearch_len * OPTS.Tsearch_lat, -1)
-            y_pred = ranked_preds[torch.arange(x_states.shape[0]), best_pred_idx]
+            if OPTS.Tteacher_rescore:
+                # Reranking using autoregressive model
+                unique_y_preds, scores = OPTS.teacher.score(x, y_pred)
+                y_pred = unique_y_preds[scores.argmax()].unsqueeze(0)
+            else:
+                # Reranking using logp
+                logp = torch.log_softmax(logits, 2)
+                B, T, H = logp.shape
+                expanded_logp = logp.view(B*T, H)
+                pred_logp = expanded_logp[torch.arange(B * T), y_pred.flatten()].view(B, T)
+                mean_pred_logp = (pred_logp * y_mask).sum(1) / y_mask.sum(1)
+                ranks = mean_pred_logp.view(x_states.shape[0], OPTS.Tsearch_len * OPTS.Tsearch_lat)
+                best_pred_idx = ranks.argmax(1)
+                ranked_preds = y_pred.view(x_states.shape[0], OPTS.Tsearch_len * OPTS.Tsearch_lat, -1)
+                y_pred = ranked_preds[torch.arange(x_states.shape[0]), best_pred_idx]
         else:
             y_pred = logits.argmax(-1)
-        y_pred = y_pred * y_mask.long()
+        y_pred = y_pred * original_y_mask.long()
         return y_pred, z, y_mask
 
     def nmt(self):
