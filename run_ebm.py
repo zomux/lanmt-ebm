@@ -405,7 +405,7 @@ if OPTS.test or OPTS.all:
             raise NotImplementedError
         load_rescoring_transformer(src_vocab_path, tgt_vocab_path, fairseq_path)
     model_path = OPTS.model_path
-    if envswitch.who() != "shu":
+    # if envswitch.who() != "shu":
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-0.8.pt"
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-realgrad_scorenet_train_delta_steps-4.pt"
 
@@ -494,7 +494,7 @@ if OPTS.batch_test:
         print("--opt_Tlatent_search is not supported in batch test mode right now. Try to implement it.")
     # Load trained model
     model_path = OPTS.model_path
-    if envswitch.who() != "shu":
+    # if envswitch.who() != "shu":
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-0.8.pt"
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-realgrad_scorenet_train_delta_steps-4.pt"
 
