@@ -57,7 +57,7 @@ def get_dataset_paths(data_root, dataset_tok):
         n_valid_per_epoch = 8
         training_warmsteps = 4000
         training_maxsteps = 100000
-        pretrained_autoregressive_path = "{}/wmt14_ende_teacher.pt".format(data_root)
+        pretrained_autoregressive_path = "{}/models/transformer_dtok-wmt14_fair_ende.pt".format(data_root)
     if dataset_tok == "iwslt16_deen":
         train_src_corpus = "{}/train/train.sp.de".format(data_root)
         train_tgt_corpus = "{}/train/train.sp.en".format(data_root)
