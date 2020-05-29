@@ -40,9 +40,9 @@ TRAINING_MAX_TOKENS = 60
 # Shu paths
 envswitch.register("shu", "data_root", "{}/data/wmt14_ende_fair".format(os.getenv("HOME")))
 envswitch.register("jason", "data_root", "/misc/vlgscratch4/ChoGroup/jason/corpora/iwslt/iwslt16_ende")
-envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/iwslt/iwslt16_ende")
+#envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/iwslt/iwslt16_ende")
 #envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/wmt/wmt16/en_ro")
-#envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/wmt/wmt14/wmt14_ende_fair")
+envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/wmt/wmt14/wmt14_ende_fair")
 
 envswitch.register("jason_prince", "home_dir", "/scratch/yl1363/lanmt-ebm")
 envswitch.register("jason", "home_dir", "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm")
@@ -61,10 +61,10 @@ envswitch.register(
     #"jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lvm/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_fastanneal_fixbug2_latentdim-2_lr-0.0003.pt"
 )
 envswitch.register(
-    "jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints_lanmt/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
+    #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints_lanmt/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
     #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints/lvm/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_fastanneal_fixbug2_latentdim-2_lr-0.0003.pt"
     #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints/lvm/wmt16_roen/lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt16_roen_fastanneal_longertrain.pt"
-    #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints/lvm/wmt14_ende_fair/wmt14_ende_base_v3.pt"
+    "jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints/lvm/wmt14_ende_fair/wmt14_ende_base_v3.pt"
 )
 
 ap = ArgumentParser()
@@ -405,13 +405,12 @@ if OPTS.test or OPTS.all:
             raise NotImplementedError
         load_rescoring_transformer(src_vocab_path, tgt_vocab_path, fairseq_path)
     model_path = OPTS.model_path
-    # if envswitch.who() != "shu":
+    if envswitch.who() != "shu":
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-0.8.pt"
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-realgrad_scorenet_train_delta_steps-4.pt"
 
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt16_roen/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt16_roen_fixbug2_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0-bestbest.pt"
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt16_roen/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt16_roen_fixbug2_modeltype-realgrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
-
         model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt14_fair_ende/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt14_fair_ende_ebm_lr-0.0003_embedsz-512_fixbug2_heads-8_hiddensz-512_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
 
     if not os.path.exists(model_path):
@@ -495,13 +494,13 @@ if OPTS.batch_test:
     # Load trained model
     model_path = OPTS.model_path
     if envswitch.who() != "shu":
-        model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-0.8.pt"
+        #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-0.8.pt"
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-realgrad_scorenet_train_delta_steps-4.pt"
 
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt16_roen/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt16_roen_fixbug2_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0-bestbest.pt"
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt16_roen/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt16_roen_fixbug2_modeltype-realgrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
 
-        #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt14_fair_ende/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt14_fair_ende_ebm_lr-0.0003_embedsz-512_fixbug2_heads-8_hiddensz-512_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
+        model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt14_fair_ende/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt14_fair_ende_ebm_lr-0.0003_embedsz-512_fixbug2_heads-8_hiddensz-512_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
