@@ -171,7 +171,8 @@ class LANMTModel2(Transformer):
         if return_topk == 1:
             return delta
         else:
-            topk = logits.topk(return_topk, dim=1).indices - 50
+            #topk = logits.topk(return_topk, dim=1).indices - 50
+            topk = logits.topk(return_topk, dim=1)[1] - 50
             return topk
 
     def compute_final_loss(self, q_prob, p_prob, y_mask, score_map):
@@ -336,12 +337,10 @@ class LANMTModel2(Transformer):
         logpz = (logpz * y_mask).sum(1) / y_length
         return logpy + logpz, logpy, logpz
 
-    def compute_elbo(self, x, y, y_mask=None):
-        """Measure the ELBO in the inference time."""
+    def compute_elbo_and_marginal(self, x, y, n_samples):
         latent_dim = self.latent_dim
         x_mask = self.to_float(torch.ne(x, 0))
-        if y_mask == None:
-            y_mask = self.to_float(torch.ne(y, 0))
+        y_mask = self.to_float(torch.ne(y, 0))
         y_length = y_mask.sum(1).float()
         batch_size = list(x.shape)[0]
         y_shape = list(y.shape)
@@ -359,7 +358,7 @@ class LANMTModel2(Transformer):
         q_mean, q_stddev = q_prob[..., :latent_dim], F.softplus(q_prob[..., latent_dim:])
 
         logpy_list, logpz_list, logqz_list = [], [], []
-        for _ in range(20):
+        for _ in range(n_samples):
             z_q = q_mean + q_stddev * torch.randn_like(q_stddev)
             logits = self.get_logits(z_q, y_mask, x_states, x_mask)
             y_pred = logits.argmax(-1)
@@ -370,11 +369,18 @@ class LANMTModel2(Transformer):
             logpz_list.append((logpz * y_mask).sum(1) / y_length)
             logqz_list.append((logqz * y_mask).sum(1) / y_length)
 
-        logpy_ = sum(logpy_list) / 20.0
-        logpz_ = sum(logpz_list) / 20.0
-        logqz_ = sum(logqz_list) / 20.0
-        elbo = logpy_ + logpz_ - logqz_
-        return elbo, logpy_, logpz_, logqz_
+        logpy_list = torch.stack(logpy_list, dim=0) # [K, B]
+        logpz_list = torch.stack(logpz_list, dim=0)
+        logqz_list = torch.stack(logqz_list, dim=0)
+        logwn_list = F.log_softmax(logpz_list - logqz_list, dim=0) # [K, B]
+
+        marginal = logpy_list + logwn_list # [K, B]
+        marginal = marginal.logsumexp(dim=0) # [B]
+
+        elbo = logpy_list + logpz_list - logqz_list
+        elbo = elbo.mean(0) # [B]
+
+        return elbo, marginal
 
     def delta_refine_batch(self, z, y_mask, x_states, x_mask, n_iter=1):
         z_list = []
@@ -406,7 +412,7 @@ class LANMTModel2(Transformer):
         logits = self.expander_nn(decoder_states)
         return logits
 
-    def translate(self, x, refine_steps=0, y_mask=None):
+    def translate(self, x, refine_steps=0, y_mask=None, report=False):
         """ Testing codes.
         """
         x_mask = self.to_float(torch.ne(x, 0)).float()
@@ -418,7 +424,7 @@ class LANMTModel2(Transformer):
             x_lens = x_mask.sum(1)
             delta = self.predict_length(x_states, x_mask)
             # NOTE experimental
-            # delta = delta + (x_lens * 0.02).long() # IWSLT DEEN
+            # delta = delta + (x_lens * 0.11).long() # IWSLT DEEN
             # delta = delta + (x_lens * 0.06).long() # WMT ROEN
             y_lens = delta.long() + x_lens.long()
             # y_lens = (y_lens.float() * 1.00).long()
@@ -446,7 +452,14 @@ class LANMTModel2(Transformer):
         y_pred = y_pred * y_mask.long()
         # y_pred = y_pred * x_mask.long()
 
-        return y_pred, z, y_mask
+        if report:
+            logpy = self.compute_logpy(logits, y_pred, y_mask)
+            logqz = self.compute_logqz(z, y_pred, y_mask, x_states, x_mask)
+            y_length = y_mask.sum(1).float()
+            obj = (logpy + logqz).sum(1) / y_length
+            return y_pred, z, y_mask, obj
+        else:
+            return y_pred, z, y_mask
 
     def get_BLEU(self, batch_y_hat, batch_y):
         """Get the average smoothed BLEU of the predictions."""

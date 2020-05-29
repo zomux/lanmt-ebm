@@ -255,7 +255,7 @@ class LatentScoreNetwork6(Transformer):
         self._mycnt += 1 # pretty hacky I know, sorry haha
         return score_map
 
-    def translate(self, x, n_iter, step_size, y_mask=None, line_search=False):
+    def translate(self, x, n_iter, step_size, y_mask=None, line_search=False, report=False):
         """ Testing codes.
         """
         lanmt = self.nmt()
@@ -268,7 +268,7 @@ class LatentScoreNetwork6(Transformer):
             x_lens = x_mask.sum(1)
             delta = lanmt.predict_length(x_states, x_mask, return_topk=OPTS.Tsearch_len)
             # NOTE experimental
-            # delta = delta + (x_lens * 0.02).long() # IWSLT DEEN
+            # delta = delta + (x_lens * 0.11).long() # IWSLT DEEN
             # delta = delta + (x_lens * 0.06).long() # WMT ROEN
             y_lens = delta.long() + x_lens.long()
             y_lens = y_lens.flatten()
@@ -299,6 +299,7 @@ class LatentScoreNetwork6(Transformer):
                     z = self.energy_line_search(z, y_mask, x_states, x_mask, None, n_iter=n_iter)
                 else:
                     z = self.energy_sgd(z, y_mask, x_states, x_mask, n_iter=n_iter, step_size=step_size)
+                    #z = lanmt.delta_refine(z, y_mask, x_states, x_mask, n_iter=n_iter)
                     #z = self.energy_adaptive(z, y_mask, x_states, x_mask, step_size=step_size)
 
         with torch.no_grad():
@@ -318,7 +319,14 @@ class LatentScoreNetwork6(Transformer):
         else:
             y_pred = logits.argmax(-1)
         y_pred = y_pred * y_mask.long()
-        return y_pred, z, y_mask
+        if report:
+            logpy = lanmt.compute_logpy(logits, y_pred, y_mask)
+            logqz = lanmt.compute_logqz(z, y_pred, y_mask, x_states, x_mask)
+            y_length = y_mask.sum(1).float()
+            obj = (logpy + logqz).sum(1) / y_length
+            return y_pred, z, y_mask, obj
+        else:
+            return y_pred, z, y_mask
 
     def nmt(self):
         return self._lanmt[0]

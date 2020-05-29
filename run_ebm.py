@@ -400,7 +400,7 @@ if OPTS.test or OPTS.all:
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt16_roen/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt16_roen_fixbug2_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0-bestbest.pt"
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt16_roen/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt16_roen_fixbug2_modeltype-realgrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
 
-        #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt14_fair_ende/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt14_fair_ende_ebm_lr-0.0003_embedsz-512_fixbug2_heads-8_hiddensz-512_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
+        model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt14_fair_ende/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt14_fair_ende_ebm_lr-0.0003_embedsz-512_fixbug2_heads-8_hiddensz-512_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
 
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
@@ -477,7 +477,7 @@ if OPTS.batch_test:
     # Load trained model
     model_path = OPTS.model_path
     if envswitch.who() != "shu":
-        #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-0.8.pt"
+        model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-0.8.pt"
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-realgrad_scorenet_train_delta_steps-4.pt"
 
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt16_roen/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt16_roen_fixbug2_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0-bestbest.pt"
@@ -507,7 +507,7 @@ if OPTS.batch_test:
     sorted_line_ids = np.argsort([len(l.split()) for l in lines])
     start_time = time.time()
     output_tokens = []
-    elbos, logpyzs, logpys, logpzs, logqzs = [], [], [], [], []
+    elbos, marginals, objs = [], [], []
     i = 0
     while i < len(lines):
         # Make a batch
@@ -533,25 +533,27 @@ if OPTS.batch_test:
 
         if OPTS.scorenet:
             with torch.no_grad() if OPTS.modeltype == "fakegrad" else suppress():
-                targets, _, _ = scorenet.translate(
-                    x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size, line_search=OPTS.Tline_search)
-                #targets, _, _ = nmt.translate(x, refine_steps=OPTS.Tsgd_steps)
+                #targets, z, _, obj = scorenet.translate(
+                #    x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size, line_search=OPTS.Tline_search, report=True)
+                targets, z, _, obj = nmt.translate(x, refine_steps=OPTS.Tsgd_steps, report=True)
         else:
-            targets, _, _ = nmt.translate(x, refine_steps=OPTS.Tsgd_steps)
+            targets, _ = nmt.translate(x, refine_steps=OPTS.Tsgd_steps)
         if envswitch.who() != "shu" and OPTS.Treport_elbo:
             with torch.no_grad():
-                elbo, logpy, logpz, logqz = nmt.compute_elbo(x, targets)
-                elbo = elbo.cpu().numpy().tolist()
-                logpy = logpy.cpu().numpy().tolist()
-                logpz = logpz.cpu().numpy().tolist()
-                logqz = logqz.cpu().numpy().tolist()
-                elbos.extend(elbo); logpys.extend(logpy); logpzs.extend(logpz); logqzs.extend(logqz)
+                elbo, marginal = nmt.compute_elbo_and_marginal(x, targets, n_samples=20)
+                elbos.extend( elbo.cpu().numpy().tolist() )
+                marginals.extend( marginal.cpu().numpy().tolist() )
+                objs.extend( obj.cpu().numpy().tolist() )
         target_tokens = targets.cpu().numpy().tolist()
         output_tokens.extend(target_tokens)
         sys.stdout.write("\rtranslating: {:.1f}%  ".format(float(i) * 100 / len(lines)))
         sys.stdout.flush()
     if envswitch.who() != "shu" and OPTS.Treport_elbo:
-        print("ELBO =", np.mean(elbos))
+        print()
+        print("ELBO     =", np.mean(elbos))
+        print("Marginal =", np.mean(marginals))
+        print("Obj      =", np.mean(objs))
+        #import ipdb; ipdb.set_trace()
 
     with open(OPTS.result_path, "w") as outf:
         # Record decoding time
