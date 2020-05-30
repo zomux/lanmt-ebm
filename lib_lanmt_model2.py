@@ -120,8 +120,8 @@ class LANMTModel2(Transformer):
             self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
         else:
             # NOTE : FinalLinear for IWSLT, otherwise nn.Linear
-            self.expander_nn = FinalLinear()
-            #self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
+            #self.expander_nn = FinalLinear()
+            self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
 
         self.label_smooth = LabelSmoothingKLDivLoss(0.1, self._tgt_vocab_size, 0)
         self.set_stepwise_training(False)

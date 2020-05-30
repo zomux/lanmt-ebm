@@ -256,7 +256,7 @@ class LatentScoreNetwork6(Transformer):
         self._mycnt += 1 # pretty hacky I know, sorry haha
         return score_map
 
-    def translate(self, x, n_iter, step_size, y_mask=None, line_search=False, force_length=None, report=False):
+    def translate(self, x, n_iter, step_size, y_mask=None, line_search=False, force_length=None, report=False, noise=1.0):
         """ Testing codes.
         """
         lanmt = self.nmt()
@@ -293,7 +293,7 @@ class LatentScoreNetwork6(Transformer):
         else:
             mean, stddev = p_prob[..., :lanmt.latent_dim], F.softplus(p_prob[..., lanmt.latent_dim:])
             B, T, L = stddev.shape
-            z = mean[:, None, :, :] + torch.randn((B, OPTS.Tsearch_lat, T, L)).cuda() * stddev[:, None, :, :] * 1.0
+            z = mean[:, None, :, :] + torch.randn((B, OPTS.Tsearch_lat, T, L)).cuda() * stddev[:, None, :, :] * noise
             z = z.view(B * OPTS.Tsearch_lat, T, -1)
             y_mask = y_mask.repeat(OPTS.Tsearch_lat, 1).view(OPTS.Tsearch_lat, B, -1).transpose(1, 0).reshape(OPTS.Tsearch_lat * B, -1)
 

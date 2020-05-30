@@ -39,7 +39,8 @@ TRAINING_MAX_TOKENS = 60
 
 # Shu paths
 envswitch.register("shu", "data_root", "{}/data/wmt14_ende_fair".format(os.getenv("HOME")))
-envswitch.register("jason", "data_root", "/misc/vlgscratch4/ChoGroup/jason/corpora/iwslt/iwslt16_ende")
+#envswitch.register("jason", "data_root", "/misc/vlgscratch4/ChoGroup/jason/corpora/iwslt/iwslt16_ende")
+envswitch.register("jason", "data_root", "/misc/vlgscratch4/ChoGroup/jason/corpora/wmt/wmt14/wmt14_ende_fair")
 #envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/iwslt/iwslt16_ende")
 #envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/wmt/wmt16/en_ro")
 envswitch.register("jason_prince", "data_root", "/scratch/yl1363/corpora/wmt/wmt14/wmt14_ende_fair")
@@ -57,8 +58,9 @@ envswitch.register(
      )
 )
 envswitch.register(
-    "jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
+    #"jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
     #"jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lvm/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_fastanneal_fixbug2_latentdim-2_lr-0.0003.pt"
+    "jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lvm/wmt14_ende_fair/wmt14_ende_base_v3.pt"
 )
 envswitch.register(
     #"jason_prince", "lanmt_path", "/scratch/yl1363/lanmt-ebm/checkpoints_lanmt/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
@@ -130,6 +132,7 @@ ap.add_argument("--opt_Twithout_ebm", action="store_true", help="without using E
 ap.add_argument("--opt_Tprint_lens", action="store_true", help="print length")
 ap.add_argument("--opt_Tsearch_len", default=1, type=int, help="search for multiple length")
 ap.add_argument("--opt_Tsearch_lat", default=1, type=int, help="search for multiple length")
+ap.add_argument("--opt_Tsearch_stddev", default=1.0, type=float, help="search for multiple length")
 ap.add_argument("--opt_distill", action="store_true", help="train with knowledge distillation")
 ap.add_argument("--opt_annealbudget", action="store_true", help="switch of annealing KL budget")
 ap.add_argument("--opt_fixbug1", action="store_true", help="fix bug in length converter")
@@ -143,7 +146,6 @@ ap.add_argument("--opt_finetune", action="store_true",
 ap.add_argument("--opt_Trefine_steps", type=int, default=0, help="steps of running iterative refinement")
 ap.add_argument("--opt_Tlatent_search", action="store_true", help="whether to search over multiple latents")
 ap.add_argument("--opt_Tteacher_rescore", action="store_true", help="whether to use teacher rescoring")
-ap.add_argument("--opt_Tcandidate_num", default=50, type=int, help="number of latent candidate for latent search")
 ap.add_argument("--opt_Tbatch_size", default=8000, type=int, help="batch size for batch translate")
 ap.add_argument("--opt_Tpartial_refine", action="store_true")
 
@@ -411,7 +413,8 @@ if OPTS.test or OPTS.all:
 
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt16_roen/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt16_roen_fixbug2_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0-bestbest.pt"
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt16_roen/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt16_roen_fixbug2_modeltype-realgrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
-        model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt14_fair_ende/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt14_fair_ende_ebm_lr-0.0003_embedsz-512_fixbug2_heads-8_hiddensz-512_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
+
+        model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/ebm/wmt14_fair_ende/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt14_fair_ende_ebm_lr-0.0003_embedsz-512_fixbug2_heads-8_hiddensz-512_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
 
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
@@ -433,7 +436,6 @@ if OPTS.test or OPTS.all:
     # Read data
     lines = open(test_src_corpus).readlines()
     ref_lens = [len(l.strip().split()) for l in open(test_tgt_corpus)]
-    latent_candidate_num = OPTS.Tcandidate_num if OPTS.Tlatent_search else None
     decode_times = []
     if OPTS.profile:
         lines = lines * 10
@@ -457,7 +459,7 @@ if OPTS.test or OPTS.all:
             if OPTS.scorenet:
                 with torch.no_grad() if OPTS.modeltype == "fakegrad" else suppress():
                     targets, _, _ = scorenet.translate(
-                        x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size, line_search=OPTS.Tline_search)
+                        x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size, line_search=OPTS.Tline_search, noise=OPTS.Tsearch_stddev)
                     #targets, _, _ = nmt.translate(x, refine_steps=OPTS.Tsgd_steps)
             else:
                 targets, _, _ = nmt.translate(x, refine_steps=OPTS.Tsgd_steps)
@@ -500,7 +502,8 @@ if OPTS.batch_test:
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt16_roen/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt16_roen_fixbug2_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0-bestbest.pt"
         #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt16_roen/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt16_roen_fixbug2_modeltype-realgrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
 
-        model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt14_fair_ende/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt14_fair_ende_ebm_lr-0.0003_embedsz-512_fixbug2_heads-8_hiddensz-512_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
+        #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt14_fair_ende/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt14_fair_ende_ebm_lr-0.0003_embedsz-512_fixbug2_heads-8_hiddensz-512_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
+        model_path = "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/ebm/wmt14_fair_ende/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt14_fair_ende_ebm_lr-0.0003_embedsz-512_fixbug2_heads-8_hiddensz-512_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))
         sys.exit()
@@ -558,9 +561,9 @@ if OPTS.batch_test:
 
         if OPTS.scorenet:
             with torch.no_grad() if OPTS.modeltype == "fakegrad" else suppress():
-                #targets, z, _, obj = scorenet.translate(
-                #    x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size, line_search=OPTS.Tline_search, report=True)
-                targets, z, _, obj = nmt.translate(x, refine_steps=OPTS.Tsgd_steps, report=True)
+                targets, z, _, obj = scorenet.translate(
+                    x, n_iter=OPTS.Tsgd_steps, step_size=OPTS.Tstep_size, line_search=OPTS.Tline_search, report=True)
+                #targets, z, _, obj = nmt.translate(x, refine_steps=OPTS.Tsgd_steps, report=True)
         else:
             targets, _ = nmt.translate(x, refine_steps=OPTS.Tsgd_steps)
         if envswitch.who() != "shu" and OPTS.Treport_elbo:
@@ -580,6 +583,7 @@ if OPTS.batch_test:
         print("Obj      =", np.mean(objs))
         #import ipdb; ipdb.set_trace()
 
+    #subword_idx = []
     with open(OPTS.result_path, "w") as outf:
         # Record decoding time
         end_time = time.time()
@@ -590,19 +594,24 @@ if OPTS.batch_test:
         for _, target_tokens in id_token_pairs:
             target_tokens = [t for t in target_tokens if t > 2]
             target_words = tgt_vocab.decode(target_tokens)
-            target_sent = " ".join(target_words)
+            #subword_idx.append(target_tokens)
+            #target_sent = " ".join(target_words)
+            target_sent = " ".join(target_words).replace("\n", "").replace("\r", "")
             outf.write(target_sent + "\n")
     sys.stdout.write("\n")
+    #import pickle as pkl
+    #pkl.dump(subword_idx,
+    #         open(os.path.join(HOME_DIR, "analysis", "wmt14_ende_results", "delta_{}.idx".format(OPTS.Tsgd_steps)), "wb"))
     print("Batch decoding time: {:.2f}s".format(decode_time))
 
 # Evaluation of translaton quality
 if OPTS.evaluate or OPTS.all:
     # Post-processing
     if is_root_node():
-        hyp_path = "/tmp/{}_noise{}_lr{}.txt".format(OPTS.modeltype, OPTS.noise, OPTS.ebm_lr)
+        hyp_path = "/tmp/{}.txt".format(OPTS.model_tag)
         if envswitch.who() != "shu":
-            hyp_path = os.path.join(HOME_DIR, "hyp", "rep_removed_{}_{}.txt".format("delta", OPTS.Tsgd_steps))
-            #hyp_path = os.path.join(HOME_DIR, "hyp", "rep_removed_{}_{}.txt".format(OPTS.modeltype, OPTS.Tsgd_steps))
+            hyp_path = os.path.join(HOME_DIR, "hyp", "{}_{}_{}_{}_{}.txt".format(
+                OPTS.Tsgd_steps, OPTS.Tstep_size, OPTS.Tsearch_len, OPTS.Tsearch_lat, OPTS.Tsearch_stddev))
         result_path = OPTS.result_path
         with open(hyp_path, "w") as outf:
             for line in open(result_path):
