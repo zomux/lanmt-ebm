@@ -56,6 +56,27 @@ envswitch.register(
         "lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt14_fair_ende_embedsz-512_fastanneal_heads-8_hiddensz-512_x5longertrain.pt.bak"
      )
 )
+
+envswitch.register(
+    "shu", "wmt16_roen_lvm",
+    "{}/data/jason_checkpoints/wmt16_roen/lanmt_annealbudget_batchtokens-8192_distill_dtok-wmt16_roen_fastanneal_longertrain.pt".format(os.getenv("HOME"))
+)
+
+envswitch.register(
+    "shu", "wmt16_roen_ebm",
+    "{}/data/jason_checkpoints/wmt16_roen/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt16_roen_fixbug2_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt".format(os.getenv("HOME"))
+)
+
+envswitch.register(
+    "shu", "iwslt16_deen_lvm",
+    "{}/data/jason_checkpoints/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt".format(os.getenv("HOME"))
+)
+
+envswitch.register(
+    "shu", "iwslt16_deen_ebm",
+    "{}/data/jason_checkpoints/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-0.8.pt".format(os.getenv("HOME"))
+)
+
 envswitch.register(
     "jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt/checkpoints/lanmt_annealbudget_batchtokens-4092_distill_dtok-iwslt16_deen_tied.pt"
     #"jason", "lanmt_path", "/misc/vlgscratch4/ChoGroup/jason/lanmt-ebm/checkpoints/lvm/iwslt16_deen/lanmt_annealbudget_batchtokens-4092_distill_fastanneal_fixbug2_latentdim-2_lr-0.0003.pt"
@@ -180,7 +201,8 @@ if envswitch.who() == "shu":
     OPTS.model_path = os.path.join(DATA_ROOT, os.path.basename(OPTS.model_path))
     # OPTS.result_path = os.path.join(DATA_ROOT, os.path.basename(OPTS.result_path))
     OPTS.fixbug1 = True
-    OPTS.fixbug2 = True
+    if OPTS.dtok != "iwslt16_deen":
+        OPTS.fixbug2 = True
 else:
     OPTS.model_path = os.path.join(HOME_DIR, "checkpoints", "ebm", OPTS.dtok, os.path.basename(OPTS.model_path))
     OPTS.result_path = os.path.join(HOME_DIR, "checkpoints", "ebm", OPTS.dtok, os.path.basename(OPTS.result_path))
@@ -305,6 +327,10 @@ nmt = LANMTModel2(**lanmt_options)
 if OPTS.scorenet:
     OPTS.shard = 0
     lanmt_model_path = envswitch.load("lanmt_path")
+    if OPTS.dtok == "wmt16_roen":
+        lanmt_model_path = envswitch.load("wmt16_roen_lvm", default=lanmt_model_path)
+    elif OPTS.dtok == "iwslt16_deen":
+        lanmt_model_path = envswitch.load("iwslt16_deen_lvm", default=lanmt_model_path)
     print("lanmt_model_path", lanmt_model_path)
     assert os.path.exists(lanmt_model_path)
     nmt.load(lanmt_model_path)
@@ -396,23 +422,25 @@ if OPTS.test or OPTS.all:
     if OPTS.Tteacher_rescore:
         print("loading teacher fairseq model...")
         if OPTS.dtok == "wmt14_fair_ende":
-            fairseq_path = "{}/wmt14_ende_fairseq".format(DATA_ROOT)
+            fairseq_path = "{}/wmt14_ende_fairseq".format(OPTS.root)
         elif OPTS.dtok == "wmt16_roen":
-            fairseq_path = "{}/wmt16_roen_fairseq".format(DATA_ROOT)
+            fairseq_path = "{}/wmt16_roen_fairseq".format(OPTS.root)
         elif OPTS.dtok == "iwslt16_deen":
-            fairseq_path = "{}/iwslt16_deen_fairseq".format(DATA_ROOT)
+            fairseq_path = "{}/iwslt16_deen_fairseq".format(OPTS.root)
         else:
             raise NotImplementedError
         load_rescoring_transformer(src_vocab_path, tgt_vocab_path, fairseq_path)
+    # Load models for test >>>
     model_path = OPTS.model_path
-    # if envswitch.who() != "shu":
-        #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-0.8.pt"
-        #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/iwslt16_deen/ebm_batchtokens-4092_distill_ebm_lr-0.0003_losstype-original_modeltype-realgrad_scorenet_train_delta_steps-4.pt"
-
-        #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt16_roen/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt16_roen_fixbug2_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0-bestbest.pt"
-        #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt16_roen/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt16_roen_fixbug2_modeltype-realgrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
-
-        #model_path = "/scratch/yl1363/lanmt-ebm/checkpoints/ebm/wmt14_fair_ende/ebm_batchtokens-8192_direction_n_layers-6_distill_dtok-wmt14_fair_ende_ebm_lr-0.0003_embedsz-512_fixbug2_heads-8_hiddensz-512_modeltype-fakegrad_scorenet_train_delta_steps-4_train_sgd_steps-1_train_step_size-1.0.pt"
+    if OPTS.dtok == "wmt16_roen":
+        model_path = envswitch.load("wmt16_roen_ebm", default=model_path)
+    elif OPTS.dtok == "iwslt16_deen":
+        model_path = envswitch.load("iwslt16_deen_ebm", default=model_path)
+    if OPTS.modeltype == "realgrad":
+        model_path = model_path.replace("fakegrad", "realgrad")
+        if OPTS.dtok == "iwslt16_deen":
+            model_path = model_path.replace("_train_sgd_steps-1_train_step_size-0.8", "")
+    # <<<
 
     if not os.path.exists(model_path):
         print("Cannot find model in {}".format(model_path))

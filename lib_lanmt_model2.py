@@ -117,7 +117,10 @@ class LANMTModel2(Transformer):
             return x @ torch.transpose(embed_layer.weight, 0, 1) + final_bias
 
         if envswitch.who() == "shu":
-            self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
+            if OPTS.dtok == "iwslt16_deen":
+                self.expander_nn = FinalLinear()
+            else:
+                self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
         else:
             # NOTE : FinalLinear for IWSLT, otherwise nn.Linear
             self.expander_nn = FinalLinear()

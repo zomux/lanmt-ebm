@@ -269,8 +269,10 @@ class LatentScoreNetwork6(Transformer):
             x_lens = x_mask.sum(1)
             delta = lanmt.predict_length(x_states, x_mask, return_topk=OPTS.Tsearch_len)
             # NOTE experimental
-            # delta = delta + (x_lens * 0.02).long() # IWSLT DEEN
-            # delta = delta + (x_lens * 0.06).long() # WMT ROEN
+            if OPTS.dtok == "wmt16_roen":
+                delta = delta + (x_lens * 0.06).long()  # WMT ROEN
+            elif OPTS.dtok == "iwslt16_deen":
+                delta = delta + (x_lens * 0.11).long()  # IWSLT DEEN
             y_lens = delta.long() + x_lens.long()
             y_lens = y_lens.flatten()
             if force_length is not None:
